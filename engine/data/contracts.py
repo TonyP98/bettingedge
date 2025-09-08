@@ -14,7 +14,7 @@ except Exception:  # pragma: no cover - fallback
 if pa:
     MatchesSchema = pa.DataFrameSchema(
         {
-            "Div": pa.Column(str),
+            "Div": pa.Column(str, nullable=True),
             "HomeTeam": pa.Column(str),
             "AwayTeam": pa.Column(str),
             "FTHG": pa.Column(int, checks=pa.Check.ge(0)),
