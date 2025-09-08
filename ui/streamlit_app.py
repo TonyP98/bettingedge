@@ -1,6 +1,15 @@
 """Streamlit entry point for the BettingEdge dashboard."""
 from __future__ import annotations
 
+import os
+import sys
+
+# Ensure project root (repo root) is importable so "ui" and "engine" resolve.
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+# existing imports below
 import subprocess
 from datetime import datetime
 
