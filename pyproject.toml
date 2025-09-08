@@ -21,3 +21,6 @@ dependencies = [
 
 [project.optional-dependencies]
 torch = ["torch"]
+
+[project.scripts]
+bettingedge-keys = "engine.ingest.keys:main"
