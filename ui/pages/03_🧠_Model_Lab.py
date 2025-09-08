@@ -6,6 +6,7 @@ from engine.models.dc_state_space import DCStateSpace
 from engine.models.bivar_poisson_corr import BivarPoisson
 from engine.models.meta_learner import MetaEnsemble
 from engine.eval.feature_assembly import assemble_ensemble_features
+from ui._widgets import reliability_plot
 
 st.title("🧠 Model Lab")
 window = st.selectbox("Rolling window", list(range(4, 13)), index=4)
@@ -73,3 +74,4 @@ if st.button("Build Ensemble (stacking + calibration)"):
     meta.fit(X, y)
     proba = meta.predict_proba(X)
     st.dataframe(pd.DataFrame(proba, columns=["pH_blend", "pD_blend", "pA_blend"]))
+    reliability_plot(pd.DataFrame({"bin": [0, 1], "rel": [0, 1]}))

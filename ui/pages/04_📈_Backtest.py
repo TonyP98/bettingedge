@@ -1,7 +1,10 @@
 """Streamlit backtest page with diagnostics tab."""
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
+
+from ui._widgets import equity_plot, metric_card
 
 st.title("📈 Backtest")
 
@@ -26,6 +29,11 @@ with backtest_tab:
     else:
         st.write("Standard Kelly strategy without conformal guard.")
 
+    if st.button("Run backtest"):
+        st.info("Backtest logic not implemented; showing sample equity curve.")
+        eq = pd.DataFrame({"step": [0, 1, 2, 3], "equity": [0, 1, 0.5, 1.5]})
+        equity_plot(eq)
+
     st.header("Bandit (online)")
     algo = st.selectbox("Algoritmo", ["linucb", "thompson"], index=0)
     alpha_b = st.slider("Alpha", 0.1, 5.0, 1.0)
@@ -46,8 +54,8 @@ with diag_tab:
         st.info("Diagnostics computation triggered (placeholder).")
     if st.button("Open last report"):
         st.info("Opening last report not implemented.")
-    st.metric("ECE (ensemble)", "-" )
-    st.metric("Brier", "-" )
-    st.metric("KS-p (PIT)", "-" )
-    st.metric("# Regimes", "-" )
+    metric_card("ECE (ensemble)", "-")
+    metric_card("Brier", "-")
+    metric_card("KS-p (PIT)", "-")
+    metric_card("# Regimes", "-")
     st.markdown("[Scarica report HTML](#)")

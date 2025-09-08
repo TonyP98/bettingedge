@@ -1,28 +1,35 @@
-"""Streamlit entry point."""
+"""Streamlit entry point for the BettingEdge dashboard."""
+from __future__ import annotations
+
+import subprocess
+from datetime import datetime
+
 import streamlit as st
-from pathlib import Path
 
-from engine.data import ingest
+from ui._state import DUCK_PATH, init_defaults
+from ui._theme import inject_theme
 
-st.title("BettingEdge Dashboard")
 
-if st.button("Ingest data/raw"):
-    tables = ingest.ingest("data/raw/l1_24_25.csv", commit=True)
-    matches = tables["matches"]
-    st.success(f"Ingested {len(matches)} matches")
-    date_min = matches["event_time_local"].min()
-    date_max = matches["event_time_local"].max()
-    st.write(f"Date range: {date_min} - {date_max}")
-    odds = tables["odds_1x2_pre"]
-    pct_1x2 = odds.drop(columns=["MatchId"]).notna().any(axis=1).mean() * 100
-    closing_pct = 0.0
-    if "odds_1x2_close" in tables:
-        close = tables["odds_1x2_close"].drop(columns=["MatchId"]).notna().any(axis=1)
-        closing_pct = close.mean() * 100
-    st.write(f"Rows with 1X2: {pct_1x2:.1f}% | closing 1X2: {closing_pct:.1f}%")
-    st.write(f"OU columns present: {'ou_25_pre' in tables}")
-    st.write(f"AH columns present: {'ah_pre' in tables}")
+st.set_page_config(page_title="bettingedge", layout="wide")
+inject_theme()
+init_defaults()
 
-notes_path = Path("docs/specs/football-data-notes.md")
-st.write(f"Notes: {notes_path}")
-st.markdown("[Apri mappa chiavi](engine/data/specs/football_data_keys.yaml)")
+
+def _commit_sha() -> str:
+    try:
+        return (
+            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
+        )
+    except Exception:
+        return "unknown"
+
+
+with st.sidebar:
+    st.title("bettingedge")
+    st.caption(f"{_commit_sha()} • {datetime.now().strftime('%Y-%m-%d')}")
+    st.caption(f"DuckDB: {DUCK_PATH}")
+    st.caption("Europe/Rome")
+    st.divider()
+    st.write("Select a page above to get started.")
+
+st.write("Use the sidebar to navigate between pages.")
