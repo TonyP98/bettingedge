@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import pandera as pa
 import pytest
 
@@ -80,13 +81,32 @@ def invalid_probs(valid_probs):
     return df
 
 
+@pytest.fixture
+def nan_probs():
+    return pd.DataFrame({"pH": [0.5], "pD": [np.nan], "pA": [0.5]})
+
+
+@pytest.fixture
+def invalid_probs_range():
+    return pd.DataFrame({"pH": [1.2], "pD": [0.3], "pA": [0.5]})
+
+
 def test_probs_valid(valid_probs):
     validate_or_raise(valid_probs, MarketProbsSchema, "probs")
+
+
+def test_probs_nan_valid(nan_probs):
+    validate_or_raise(nan_probs, MarketProbsSchema, "probs")
 
 
 def test_probs_invalid(invalid_probs):
     with pytest.raises(pa.errors.SchemaError):
         validate_or_raise(invalid_probs, MarketProbsSchema, "probs")
+
+
+def test_probs_invalid_range(invalid_probs_range):
+    with pytest.raises(pa.errors.SchemaError):
+        validate_or_raise(invalid_probs_range, MarketProbsSchema, "probs")
 
 
 def test_ingest_valid():

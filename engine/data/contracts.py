@@ -34,12 +34,32 @@ if pa:
 
     MarketProbsSchema = pa.DataFrameSchema(
         {
-            "pH": pa.Column(float, checks=[pa.Check.ge(0), pa.Check.le(1)]),
-            "pD": pa.Column(float, checks=[pa.Check.ge(0), pa.Check.le(1)]),
-            "pA": pa.Column(float, checks=[pa.Check.ge(0), pa.Check.le(1)]),
+            "pH": pa.Column(
+                float,
+                checks=pa.Check(lambda s: s.isna() | ((s >= 0) & (s <= 1))),
+                nullable=True,
+                required=False,
+            ),
+            "pD": pa.Column(
+                float,
+                checks=pa.Check(lambda s: s.isna() | ((s >= 0) & (s <= 1))),
+                nullable=True,
+                required=False,
+            ),
+            "pA": pa.Column(
+                float,
+                checks=pa.Check(lambda s: s.isna() | ((s >= 0) & (s <= 1))),
+                nullable=True,
+                required=False,
+            ),
         },
         checks=pa.Check(
-            lambda df: ((df["pH"] + df["pD"] + df["pA"] - 1).abs() <= 1e-6).all()
+            lambda df: (
+                df[["pH", "pD", "pA"]]
+                .dropna()
+                .apply(lambda r: abs(r.sum() - 1) <= 1e-6, axis=1)
+                .all()
+            )
         ),
     )
 else:  # pragma: no cover - placeholders when pandera unavailable
