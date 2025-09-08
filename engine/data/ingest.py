@@ -4,13 +4,71 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, List
+import hashlib
+import logging
+from typing import Dict, List, Optional
 
 import pandas as pd
 import yaml
 import duckdb
 from zoneinfo import ZoneInfo
 from importlib.resources import files
+
+log = logging.getLogger(__name__)
+
+# === Football-Data awareness ==================================================
+# Chiavi "esatte" secondo il documento "Notes for Football Data" (Football-Data.co.uk)
+# Usate per riconoscere e mappare i CSV storici/attuali senza richiedere rinominhe manuali.
+FD_EXACT_KEYS_RESULTS = {
+    # risultati principali
+    "Div",
+    "Date",
+    "Time",
+    "HomeTeam",
+    "AwayTeam",
+    "FTHG",
+    "FTAG",
+    "FTR",
+    "HG",
+    "AG",
+    "Res",
+    "HTHG",
+    "HTAG",
+    "HTR",
+}
+
+# Alias raggruppati per campo canonico che usiamo internamente
+FD_ALIASES: Dict[str, List[str]] = {
+    "Date": ["Date", "DATA", "date", "Datetime", "DateTime", "TIMESTAMP", "datetime"],
+    "Time": ["Time", "Ora", "HOUR", "time"],
+    "Home": ["Home", "HomeTeam", "SquadraCasa", "home"],
+    "Away": ["Away", "AwayTeam", "SquadraOspite", "away"],
+    "HomeGoals": ["HomeGoals", "FTHG", "HG", "GolCasa", "home_goals"],
+    "AwayGoals": ["AwayGoals", "FTAG", "AG", "GolOspite", "away_goals"],
+    "FTR": ["FTR", "Res"],
+    "HTHG": ["HTHG"],
+    "HTAG": ["HTAG"],
+    "HTR": ["HTR"],
+    "MatchId": ["MatchId", "match_id", "matchid"],
+    "event_time": ["event_time", "EventTime", "eventTime", "Datetime", "DateTime"],
+}
+
+
+def _find_col(df: pd.DataFrame, *candidates: str) -> Optional[str]:
+    """Trova la prima colonna presente in df tra i candidati (case-insensitive)."""
+    for c in candidates:
+        if c in df.columns:
+            return c
+    lower_map = {c.lower(): c for c in df.columns}
+    for c in candidates:
+        if c.lower() in lower_map:
+            return lower_map[c.lower()]
+    return None
+
+
+def _fd_map(df: pd.DataFrame, key: str) -> Optional[str]:
+    """Trova la colonna per un campo canonico usando FD_ALIASES."""
+    return _find_col(df, *FD_ALIASES.get(key, []))
 
 from .vig import remove_vig_multiplicative, remove_vig_shin
 from .bookmaker_fusion import fuse_1x2
@@ -65,10 +123,130 @@ def _cast_numeric(df: pd.DataFrame, spec: Dict) -> pd.DataFrame:
 
 
 def parse_results(df: pd.DataFrame, spec: Dict) -> pd.DataFrame:
-    cols = spec["results"]["required"] + [
-        c for c in spec["results"].get("optional", []) if c in df.columns
+    """Parser robusto per risultati di partite di calcio.
+
+    Riconosce alias comuni (inclusi quelli di Football-Data.co.uk) e costruisce
+    automaticamente ``event_time`` e ``MatchId`` se assenti. I nomi delle
+    colonne richieste sono determinati da ``spec``.
+    """
+
+    df2 = df.copy()
+
+    # 1) Football-Data awareness
+    exact_hits = FD_EXACT_KEYS_RESULTS.intersection(set(df2.columns))
+    if exact_hits:
+        log.info(
+            "Football-Data schema detected (hits: %s). Using FD-aware mapping.",
+            sorted(exact_hits),
+        )
+    else:
+        log.warning(
+            "Football-Data exact keys not detected. Proceeding with generic aliases. "
+            "If your data comes from football-data.co.uk, please keep canonical headers where possible."
+        )
+
+    # 2) Individuazione colonne logiche
+    c_date = _fd_map(df2, "Date")
+    c_time = _fd_map(df2, "Time")
+    c_dt = _find_col(df2, "Datetime", "DateTime", "datetime", "TIMESTAMP")
+    c_home = _fd_map(df2, "Home")
+    c_away = _fd_map(df2, "Away")
+    c_hg = _fd_map(df2, "HomeGoals")
+    c_ag = _fd_map(df2, "AwayGoals")
+    c_ftr = _fd_map(df2, "FTR")
+    c_hthg = _fd_map(df2, "HTHG")
+    c_htag = _fd_map(df2, "HTAG")
+    c_htr = _fd_map(df2, "HTR")
+    c_mid = _fd_map(df2, "MatchId")
+    c_evt = _fd_map(df2, "event_time")
+
+    # 3) Costruzione event_time
+    if c_evt is None:
+        if c_dt:
+            dt = pd.to_datetime(df2[c_dt], errors="coerce", dayfirst=True, utc=False)
+        else:
+            if c_date is None:
+                raise ValueError("Missing required date/datetime columns to build event_time.")
+            date_str = df2[c_date].astype(str)
+            time_str = df2[c_time].astype(str) if c_time else "00:00:00"
+            dt = pd.to_datetime(
+                date_str + " " + time_str, errors="coerce", dayfirst=True, utc=False
+            )
+        df2["event_time"] = dt
+        c_evt = "event_time"
+    else:
+        df2[c_evt] = pd.to_datetime(df2[c_evt], errors="coerce", utc=True)
+
+    # 4) Verifiche core
+    missing_core = [
+        name
+        for name, col in {
+            "Home": c_home,
+            "Away": c_away,
+            "HomeGoals": c_hg,
+            "AwayGoals": c_ag,
+        }.items()
+        if col is None
     ]
-    res = df[["MatchId", "event_time"] + cols].copy()
+    if missing_core:
+        raise KeyError(f"Missing required columns: {missing_core}")
+
+    # 5) MatchId
+    if c_mid is None:
+        def mk_id(row):
+            key = f"{row[c_evt]}|{row[c_home]}-{row[c_away]}"
+            return hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+
+        df2["MatchId"] = df2.apply(mk_id, axis=1)
+        c_mid = "MatchId"
+
+    # 6) Preparazione colonne richieste da spec
+    results_spec = spec.get("results_cols")
+    if results_spec is None:
+        res_def = spec.get("results", {})
+        results_spec = res_def.get("required", []) + [
+            c for c in res_def.get("optional", []) if c in df2.columns
+        ]
+    cols_req = list(results_spec)
+
+    out_cols: List[str] = []
+    for c in cols_req:
+        real = _fd_map(df2, c) or (c if c in df2.columns else None)
+        if real is None:
+            real = _find_col(df2, c, c.lower(), c.upper())
+        if real is None:
+            lc = c.lower()
+            if lc == "time":
+                df2["Time"] = df2[c_evt].dt.strftime("%H:%M:%S")
+                real = "Time"
+            elif lc == "date":
+                df2["Date"] = df2[c_evt].dt.strftime("%Y-%m-%d")
+                real = "Date"
+            elif lc == "hometeam" and c_home:
+                real = c_home
+            elif lc == "awayteam" and c_away:
+                real = c_away
+            elif lc in ("fthg", "hg") and c_hg:
+                real = c_hg
+            elif lc in ("ftag", "ag") and c_ag:
+                real = c_ag
+            elif lc == "ftr" and c_ftr:
+                real = c_ftr
+            elif lc == "hthg" and c_hthg:
+                real = c_hthg
+            elif lc == "htag" and c_htag:
+                real = c_htag
+            elif lc == "htr" and c_htr:
+                real = c_htr
+            else:
+                raise KeyError(f"Column '{c}' required by spec not found or derivable.")
+        out_cols.append(real)
+
+    # 7) Componi output canonico
+    res = df2[[c_mid, c_evt] + out_cols].copy()
+    res.rename(columns={c_mid: "MatchId", c_evt: "event_time"}, inplace=True)
+    res["event_time"] = pd.to_datetime(res["event_time"], errors="coerce", utc=True)
+    res["event_time"] = res["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
     return res
 
 
