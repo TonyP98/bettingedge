@@ -1,7 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "bettingedge"
-version = "0.1.0"
-description = "BettingEdge engine."
+version = "0.0.1"
+description = "Betting research engine"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "hydra-core",
@@ -24,3 +29,15 @@ torch = ["torch"]
 
 [project.scripts]
 bettingedge-keys = "engine.ingest.keys:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["engine*"]
+exclude = ["tests*", "docs*", "ui*", "data*"]
+
+[tool.setuptools.package-data]
+engine = ["data/specs/*.yaml", "eval/templates/*.html", "eval/templates/*.htm"]

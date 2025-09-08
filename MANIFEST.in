@@ -1,0 +1,3 @@
+include README.md
+recursive-include engine/data/specs *.yaml
+recursive-include engine/eval/templates *.html *.htm
