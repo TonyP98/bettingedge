@@ -5,7 +5,7 @@ from typing import Tuple
 
 import pandas as pd
 
-__all__ = ["assemble_ensemble_features"]
+__all__ = ["assemble_ensemble_features", "assemble_explain_matrix"]
 
 
 def assemble_ensemble_features(
@@ -44,3 +44,20 @@ def assemble_ensemble_features(
     X = df[cols].copy()
     y = df["y_wdl"].copy()
     return X, y
+
+
+def assemble_explain_matrix(
+    df: pd.DataFrame, *, include_close: bool = False
+) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """Assemble features, target and identifiers for explainability tasks.
+
+    This helper is a thin wrapper around :func:`assemble_ensemble_features` that
+    also returns the ``match_id`` column (if present) used to index SHAP values
+    and rule-based playbooks.
+    """
+
+    X, y = assemble_ensemble_features(df, include_close=include_close)
+    match_ids = df["match_id"] if "match_id" in df.columns else pd.Series(
+        range(len(df)), name="match_id"
+    )
+    return X, y, match_ids
