@@ -1,9 +1,20 @@
 import numpy as np
 import pandas as pd
-import pytest
+import pkgutil, pytest
 
-shap = pytest.importorskip("shap", reason="shap non installato nell'ambiente CI")
-lgbm = pytest.importorskip("lightgbm", reason="lightgbm non installato nell'ambiente CI")
+HAS_SHAP = pkgutil.find_loader("shap") is not None
+HAS_LGBM = pkgutil.find_loader("lightgbm") is not None
+
+pytestmark = [
+    pytest.mark.skipif(not HAS_SHAP, reason="shap non installato"),
+    pytest.mark.skipif(not HAS_LGBM, reason="lightgbm non installato"),
+]
+
+if HAS_SHAP:
+    import shap
+if HAS_LGBM:
+    import lightgbm as lgbm
+
 imodels = pytest.importorskip(
     "imodels",
     reason="imodels opzionale; se manca si skippa",

@@ -1,9 +1,14 @@
 import numpy as np
 import pandas as pd
-import pytest
+import pkgutil, pytest
 
 from engine.eval.feature_assembly import assemble_ensemble_features
-from engine.models.meta_learner import MetaEnsemble
+
+HAS_LGBM = pkgutil.find_loader("lightgbm") is not None
+pytestmark = pytest.mark.skipif(not HAS_LGBM, reason="lightgbm non installato")
+
+if HAS_LGBM:
+    from engine.models.meta_learner import MetaEnsemble
 
 
 def _generate_df(n: int = 100, seed: int = 0) -> pd.DataFrame:
