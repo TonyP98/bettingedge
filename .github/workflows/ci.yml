@@ -14,13 +14,20 @@ jobs:
           python-version: "3.11"
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
-      - name: Install package (with dev extras)
+      - name: Install package (dev + explain)
         run: |
-          pip install -e .[dev] || true
-          # fallback nel caso gli extras non fossero risolti (vecchie pip):
+          pip install -e .[dev,explain] || true
+          # fallback nel caso gli extras non vengano risolti:
           pip install -e .
-          pip install pytest pytest-cov
+          pip install pytest shap lightgbm || true
+      - name: Show environment (debug)
+        run: |
+          python -V
+          python -c "import sys,platform; print(platform.platform())"
+          python -c "import numpy; print('numpy', numpy.__version__)"
+          python -c "import importlib, pkgutil; print('shap?', importlib.util.find_spec('shap') is not None)"
+          python -c "import importlib; print('lightgbm?', importlib.util.find_spec('lightgbm') is not None)"
       - name: Validate key spec
         run: python -m engine.ingest.keys --check
       - name: Run tests
-        run: python -m pytest -q
+        run: python -m pytest -q --maxfail=1

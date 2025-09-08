@@ -1,11 +1,16 @@
 import numpy as np
-import numpy as np
 import pandas as pd
-import shap
+import pytest
+
+shap = pytest.importorskip("shap", reason="shap non installato nell'ambiente CI")
+lgbm = pytest.importorskip("lightgbm", reason="lightgbm non installato nell'ambiente CI")
+imodels = pytest.importorskip(
+    "imodels",
+    reason="imodels opzionale; se manca si skippa",
+)
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from lightgbm import LGBMClassifier
 
 from engine.explain.shap_utils import shap_global, shap_local
 from engine.explain.rulefit import fit_rule_playbook
@@ -20,7 +25,7 @@ def test_shap_global_local():
     X_bg, X_eval, y_bg, y_eval = train_test_split(
         X, y, test_size=0.5, random_state=1
     )
-    model = LGBMClassifier(n_estimators=50, random_state=0)
+    model = lgbm.LGBMClassifier(n_estimators=50, random_state=0)
     model.fit(X_bg, y_bg)
 
     df_global = shap_global(model, pd.DataFrame(X_bg, columns=feature_names), pd.DataFrame(X_eval, columns=feature_names), feature_names, fold=0)
