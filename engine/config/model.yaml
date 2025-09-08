@@ -30,3 +30,9 @@ meta_learner:
     n_estimators: 500
     min_data_in_leaf: 50
   calibrate: true
+
+conformal:
+  alpha: 0.1
+  mondrian_keys: []
+  min_group_size: 100
+  width_cap: 0.6
