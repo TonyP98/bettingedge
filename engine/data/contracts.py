@@ -15,7 +15,6 @@ if pa:
     MatchesSchema = pa.DataFrameSchema(
         {
             "Div": pa.Column(str),
-            "event_time": pa.Column(str),
             "HomeTeam": pa.Column(str),
             "AwayTeam": pa.Column(str),
             "FTHG": pa.Column(int, checks=pa.Check.ge(0)),
