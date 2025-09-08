@@ -1,32 +1,69 @@
 """Data contracts defined using Pandera schemas."""
+
 from __future__ import annotations
 
-try:
+from typing import Type
+
+import pandas as pd
+
+try:  # pragma: no cover - optional dependency
     import pandera as pa
-    from pandera.typing import Series
-except Exception:  # pragma: no cover
+except Exception:  # pragma: no cover - fallback
     pa = None  # type: ignore
 
-
 if pa:
-    class ResultsSchema(pa.SchemaModel):
-        match_id: Series[str]
-        home_goals: Series[int]
-        away_goals: Series[int]
+    MatchesSchema = pa.DataFrameSchema(
+        {
+            "Div": pa.Column(str),
+            "event_time": pa.Column(str),
+            "HomeTeam": pa.Column(str),
+            "AwayTeam": pa.Column(str),
+            "FTHG": pa.Column(int, checks=pa.Check.ge(0)),
+            "FTAG": pa.Column(int, checks=pa.Check.ge(0)),
+            "FTR": pa.Column(str, checks=pa.Check.isin(["H", "D", "A"])),
+        }
+    )
 
-    class OddsSchema(pa.SchemaModel):
-        match_id: Series[str]
-        home_win: Series[float]
-        draw: Series[float]
-        away_win: Series[float]
-        home_win_close: Series[float]
-        draw_close: Series[float]
-        away_win_close: Series[float]
-else:  # pragma: no cover - fallback definitions
-    class ResultsSchema:  # type: ignore
-        """Placeholder Results schema."""
+    Odds1x2PreSchema = pa.DataFrameSchema(
+        {
+            "H": pa.Column(float, checks=[pa.Check.ge(1.01), pa.Check.le(200)]),
+            "D": pa.Column(float, checks=[pa.Check.ge(1.01), pa.Check.le(200)]),
+            "A": pa.Column(float, checks=[pa.Check.ge(1.01), pa.Check.le(200)]),
+            "overround_pre": pa.Column(float, checks=pa.Check.le(1.25)),
+        }
+    )
 
-    class OddsSchema:  # type: ignore
-        """Placeholder Odds schema."""
+    MarketProbsSchema = pa.DataFrameSchema(
+        {
+            "pH": pa.Column(float, checks=[pa.Check.ge(0), pa.Check.le(1)]),
+            "pD": pa.Column(float, checks=[pa.Check.ge(0), pa.Check.le(1)]),
+            "pA": pa.Column(float, checks=[pa.Check.ge(0), pa.Check.le(1)]),
+        },
+        checks=pa.Check(
+            lambda df: ((df["pH"] + df["pD"] + df["pA"] - 1).abs() <= 1e-6).all()
+        ),
+    )
+else:  # pragma: no cover - placeholders when pandera unavailable
+    MatchesSchema = object  # type: ignore
+    Odds1x2PreSchema = object  # type: ignore
+    MarketProbsSchema = object  # type: ignore
 
-__all__ = ["ResultsSchema", "OddsSchema"]
+
+def validate_or_raise(df, schema: Type, name: str):
+    """Validate ``df`` against ``schema`` if Pandera is available."""
+    if pa is None:
+        return df
+    try:
+        return schema.validate(df)
+    except pa.errors.SchemaError as exc:
+        raise pa.errors.SchemaError(
+            exc.schema, exc.data, f"{name} validation error: {exc}"
+        ) from exc
+
+
+__all__ = [
+    "MatchesSchema",
+    "Odds1x2PreSchema",
+    "MarketProbsSchema",
+    "validate_or_raise",
+]

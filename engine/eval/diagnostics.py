@@ -1,8 +1,10 @@
 """Diagnostic utilities for model evaluation."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Tuple
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -101,7 +103,9 @@ def reliability_table(
     return pd.DataFrame(rows)
 
 
-def brier_decomposition(p_hat: np.ndarray, y: np.ndarray, n_bins: int = 15) -> Dict[str, float]:
+def brier_decomposition(
+    p_hat: np.ndarray, y: np.ndarray, n_bins: int = 15
+) -> Dict[str, float]:
     """Decompose the multiclass Brier score.
 
     The decomposition follows Murphy (1973) and returns a dictionary with the
@@ -186,4 +190,8 @@ class ReliabilityBin:
 
 def run_diagnostics():  # pragma: no cover - placeholder for integration
     """Run the full diagnostics pipeline (to be extended)."""
-    return None
+    report_dir = Path("data/processed/reports")
+    report_dir.mkdir(parents=True, exist_ok=True)
+    path = report_dir / "diagnostics.html"
+    path.write_text("<html><body>diagnostics</body></html>")
+    return str(path)
