@@ -13,6 +13,7 @@ from ..risk.thresholds import conformal_kelly, lower_edge_rule
 from ..online.bandits import make_bandit
 from .metrics import average_width, empirical_coverage, validity_gap
 from .replay import replay_bandit
+from .diagnostics import run_diagnostics
 
 
 def apply_conformal_guard(df: pd.DataFrame, cfg: DictConfig) -> pd.DataFrame:
@@ -108,6 +109,8 @@ def main(cfg: DictConfig) -> None:  # pragma: no cover - demonstration
         )
         print("coverage", cov)
         print(df)
+    if getattr(cfg, "diagnostics", None) and cfg.diagnostics.get("enable", False):  # type: ignore[attr-defined]
+        run_diagnostics()
 
 
 if __name__ == "__main__":  # pragma: no cover

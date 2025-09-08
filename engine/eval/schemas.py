@@ -11,6 +11,10 @@ __all__ = [
     "conformal_calibs_schema",
     "bet_logs_conformal_schema",
     "bandit_logs_schema",
+    "diagnostics_summary_schema",
+    "diagnostics_reliability_schema",
+    "diagnostics_pit_schema",
+    "diagnostics_regimes_schema",
 ]
 
 
@@ -106,6 +110,53 @@ bandit_logs_schema = DataFrameSchema(
         "pnl": Column(pa.Float64),
         "bankroll": Column(pa.Float64),
         "algo": Column(pa.String),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+diagnostics_summary_schema = DataFrameSchema(
+    {
+        "fold": Column(pa.Int64),
+        "metric": Column(pa.String),
+        "value": Column(pa.Float64),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+diagnostics_reliability_schema = DataFrameSchema(
+    {
+        "fold": Column(pa.Int64),
+        "bin": Column(pa.Int64),
+        "p_hat": Column(pa.Float64),
+        "freq": Column(pa.Float64),
+        "model": Column(pa.String),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+diagnostics_pit_schema = DataFrameSchema(
+    {
+        "fold": Column(pa.Int64),
+        "model": Column(pa.String),
+        "u": Column(pa.Float64, Check.in_range(0, 1, inclusive="both")),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+diagnostics_regimes_schema = DataFrameSchema(
+    {
+        "fold": Column(pa.Int64),
+        "regime_id": Column(pa.Int64),
+        "n": Column(pa.Int64),
+        "kpi_json": Column(pa.Object),
         "created_at": Column(pa.DateTime),
     },
     coerce=True,
