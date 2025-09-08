@@ -1,4 +1,7 @@
 rolling:
   window: 30
+  model: dc_state_space
+  window_giornate: 8
+  step: 1
 folds: 3
 policy: hold

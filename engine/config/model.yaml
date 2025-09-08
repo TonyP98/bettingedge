@@ -1,3 +1,16 @@
+dc_state_space:
+  max_goals: 6
+  init_rho: -0.05
+  rho_bounds: [-0.2, 0.2]
+  max_em_iter: 8
+  em_tol: 1e-4
+  q:
+    atk: 0.02
+    def: 0.02
+    home_adv: 0.005
+    rho: 0.002
+  center_states: true
+  min_matches_team: 6
 model_a:
   learning_rate: 0.1
 model_b:
