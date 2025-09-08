@@ -537,7 +537,7 @@ def ingest(source: str, commit: bool) -> Dict[str, pd.DataFrame]:
     ensure_dirs()
     spec = load_spec()
     df = pd.read_csv(source)
-    df = df.dropna(axis=1, how="all")
+    df = df.dropna(axis=1, how="all").dropna(how="all").convert_dtypes()
     df = parse_event_time(df, spec)
     results = parse_results(df, spec)
     validate_or_raise(results, MatchesSchema, "matches")
