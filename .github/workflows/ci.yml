@@ -23,10 +23,14 @@ jobs:
       - name: Show environment (debug)
         run: |
           python -V
-          python -c "import sys,platform; print(platform.platform())"
-          python -c "import numpy; print('numpy', numpy.__version__)"
-          python -c "import importlib, pkgutil; print('shap?', importlib.util.find_spec('shap') is not None)"
-          python -c "import importlib; print('lightgbm?', importlib.util.find_spec('lightgbm') is not None)"
+          python -c "import platform; print(platform.platform())"
+          python - <<'PY'
+import sys, numpy, pkgutil, importlib
+print('numpy', numpy.__version__)
+print('importlib module file:', getattr(importlib, '__file__', 'builtin'))
+print('shap?', pkgutil.find_loader('shap') is not None)
+print('lightgbm?', pkgutil.find_loader('lightgbm') is not None)
+PY
       - name: Validate key spec
         run: python -m engine.ingest.keys --check
       - name: Run tests
