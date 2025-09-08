@@ -9,11 +9,15 @@ import pandas as pd
 import yaml
 import duckdb
 from zoneinfo import ZoneInfo
+from importlib.resources import files
 
 from .vig import remove_vig_multiplicative, remove_vig_shin
 from .bookmaker_fusion import fuse_1x2
 
-SPEC_PATH = Path("engine/data/specs/football_data_keys.yaml")
+try:
+    SPEC_PATH = files("engine.data.specs") / "football_data_keys.yaml"
+except Exception:  # pragma: no cover - fallback for unusual setups
+    SPEC_PATH = Path("engine/data/specs/football_data_keys.yaml")
 DB_PATH = Path("data/processed/football.duckdb")
 
 

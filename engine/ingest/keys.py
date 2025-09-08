@@ -9,11 +9,20 @@ from typing import Any
 
 import yaml
 import pandas as pd
+from importlib.resources import files
 
 from ._keys_schema import FootballDataKeys
 
 # Default path to the YAML specification
-DEF_SPEC = pathlib.Path(__file__).resolve().parents[1] / "data" / "specs" / "football_data_keys.yaml"
+try:
+    DEF_SPEC = files("engine.data.specs") / "football_data_keys.yaml"
+except Exception:  # pragma: no cover - fallback for unusual setups
+    DEF_SPEC = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "data"
+        / "specs"
+        / "football_data_keys.yaml"
+    )
 
 
 def load_spec(path: pathlib.Path) -> FootballDataKeys:
