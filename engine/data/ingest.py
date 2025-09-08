@@ -403,11 +403,13 @@ def compute_market_probs(
         raise ValueError(
             "Nessuna riga con trio di quote complete (AvgH/AvgD/AvgA). Verifica i CSV odds pre-match."
         )
-    if (~mask_ok).any():
-        log.warning(
-            "compute_market_probs: scarto %s righe senza trio completo AvgH/AvgD/AvgA.",
-            int((~mask_ok).sum()),
-        )
+    coverage = mask_ok.mean() * 100
+    log.info(
+        "compute_market_probs: coverage pre %.1f%% (%s/%s)",
+        coverage,
+        int(mask_ok.sum()),
+        len(mask_ok),
+    )
     pre_valid = odds_pre2.loc[mask_ok, ["MatchId", "AvgH", "AvgD", "AvgA"]]
 
     fused_vals = pre_valid.apply(
@@ -457,23 +459,36 @@ def compute_market_probs(
     # Reattach to original index, leaving NaNs for rows without complete trio
     market_probs_pre = pd.DataFrame({"MatchId": odds_pre2["MatchId"]})
     market_probs_pre = market_probs_pre.join(market_probs_pre_valid)
+    float_cols = [c for c in market_probs_pre.columns if c != "MatchId"]
+    market_probs_pre[float_cols] = market_probs_pre[float_cols].astype(float)
     tables["market_probs_pre"] = market_probs_pre
 
     if odds_close is not None and {"AvgCH", "AvgCD", "AvgCA"}.issubset(
         odds_close.columns
     ):
-        fused_close = odds_close.apply(
+        mask_close = odds_close[["AvgCH", "AvgCD", "AvgCA"]].notna().all(axis=1)
+        coverage_close = mask_close.mean() * 100
+        log.info(
+            "compute_market_probs: coverage close %.1f%% (%s/%s)",
+            coverage_close,
+            int(mask_close.sum()),
+            len(mask_close),
+        )
+        close_valid = odds_close.loc[mask_close, ["MatchId", "AvgCH", "AvgCD", "AvgCA"]]
+        fused_close = close_valid.apply(
             lambda r: fuse_1x2([(r["AvgCH"], r["AvgCD"], r["AvgCA"])])[:3],
             axis=1,
             result_type="expand",
         )
+        fused_close.columns = ["H", "D", "A"]
         base = pd.DataFrame(
             {
-                "MatchId": odds_close["MatchId"],
-                "H": fused_close[0],
-                "D": fused_close[1],
-                "A": fused_close[2],
-            }
+                "MatchId": close_valid["MatchId"],
+                "H": fused_close["H"],
+                "D": fused_close["D"],
+                "A": fused_close["A"],
+            },
+            index=close_valid.index,
         )
         probs_mul = base.apply(
             lambda r: remove_vig_multiplicative(r["H"], r["D"], r["A"]),
@@ -487,9 +502,8 @@ def compute_market_probs(
         )
         overround = base.apply(lambda r: sum(1.0 / r[["H", "D", "A"]]), axis=1)
         market_disagreement = (probs_mul - probs_shin).abs().sum(axis=1)
-        market_probs_close = pd.DataFrame(
+        market_probs_close_valid = pd.DataFrame(
             {
-                "MatchId": base["MatchId"],
                 "pH_mul": probs_mul[0],
                 "pD_mul": probs_mul[1],
                 "pA_mul": probs_mul[2],
@@ -498,8 +512,13 @@ def compute_market_probs(
                 "pA_shin": probs_shin[2],
                 "overround_close": overround,
                 "market_disagreement": market_disagreement,
-            }
+            },
+            index=base.index,
         )
+        market_probs_close = pd.DataFrame({"MatchId": odds_close["MatchId"]})
+        market_probs_close = market_probs_close.join(market_probs_close_valid)
+        float_cols = [c for c in market_probs_close.columns if c != "MatchId"]
+        market_probs_close[float_cols] = market_probs_close[float_cols].astype(float)
         tables["market_probs_close"] = market_probs_close
     return tables
 
@@ -547,6 +566,15 @@ def ingest(source: str, commit: bool) -> Dict[str, pd.DataFrame]:
             ),
             MarketProbsSchema,
             "market_probs_pre",
+        )
+
+    if "market_probs_close" in tables:
+        validate_or_raise(
+            tables["market_probs_close"][["pH_mul", "pD_mul", "pA_mul"]].rename(
+                columns={"pH_mul": "pH", "pD_mul": "pD", "pA_mul": "pA"}
+            ),
+            MarketProbsSchema,
+            "market_probs_close",
         )
 
     if commit:
