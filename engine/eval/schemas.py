@@ -10,6 +10,7 @@ __all__ = [
     "ensemble_preds_schema",
     "conformal_calibs_schema",
     "bet_logs_conformal_schema",
+    "bandit_logs_schema",
 ]
 
 
@@ -88,6 +89,23 @@ bet_logs_conformal_schema = DataFrameSchema(
         "stake": Column(pa.Float64),
         "pnl": Column(pa.Float64),
         "params": Column(pa.String),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+bandit_logs_schema = DataFrameSchema(
+    {
+        "t": Column(pa.Int64),
+        "match_id": Column(pa.String),
+        "action_edge_thr": Column(pa.Float64),
+        "action_kcap": Column(pa.Float64),
+        "context": Column(pa.Object),
+        "reward": Column(pa.Float64),
+        "stake": Column(pa.Float64),
+        "pnl": Column(pa.Float64),
+        "bankroll": Column(pa.Float64),
+        "algo": Column(pa.String),
         "created_at": Column(pa.DateTime),
     },
     coerce=True,
