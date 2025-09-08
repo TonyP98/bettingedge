@@ -41,5 +41,17 @@ st.subheader("Specs")
 st.markdown("[Notes](docs/specs/football-data-notes.md)")
 st.markdown("[Key map](engine/data/specs/football_data_keys.yaml)")
 
+
 if st.button("Rebuild Market Probs"):
-    st.info("Rebuild logic not implemented yet.")
+    try:
+        matches = read_duck("SELECT * FROM matches")
+        odds_pre = read_duck("SELECT * FROM odds_1x2_pre")
+        try:
+            odds_close = read_duck("SELECT * FROM odds_1x2_close")
+        except Exception:
+            odds_close = None
+        tables = ingest.compute_market_probs(matches, odds_pre, odds_close)
+        ingest.save_tables(tables)
+        st.success("Market probabilities rebuilt")
+    except Exception as exc:
+        st.error(f"Failed to rebuild market probabilities: {exc}")
