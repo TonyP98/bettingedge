@@ -18,3 +18,16 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
 python -m pytest -q
 ```
+
+## Quality & Tracking
+
+Per abilitare MLflow localmente:
+
+```bash
+export MLFLOW_TRACKING_URI=mlruns
+python -m engine.eval.backtester
+```
+
+Gli artifact (es. `equity.csv`, `diagnostics.html`, `playbook.html`) vengono salvati nella cartella indicata da MLflow.
+
+L'ingestione fallisce se i dati violano gli schemi Pandera; ad esempio, modificare una colonna con valori non validi provocherà un errore e l'operazione non verrà completata.

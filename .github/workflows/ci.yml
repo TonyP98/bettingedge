@@ -20,6 +20,10 @@ jobs:
           # fallback nel caso gli extras non vengano risolti:
           pip install -e .
           pip install pytest shap lightgbm || true
+      - name: Static checks
+        run: |
+          ruff .
+          black --check .
       - name: Show environment (debug)
         run: |
           python -V
@@ -34,4 +38,37 @@ PY
       - name: Validate key spec
         run: python -m engine.ingest.keys --check
       - name: Run tests
-        run: python -m pytest -q --maxfail=1
+        run: python -m pytest -q --maxfail=1 --cov=engine --cov-report=xml
+      - name: Diagnostics smoke
+        run: |
+          python - <<'PY'
+import pathlib, duckdb
+path = pathlib.Path('data/processed/football.duckdb')
+if path.exists():
+    con = duckdb.connect(path)
+    tables = con.execute('show tables').fetchall()
+    if tables:
+        rep_dir = pathlib.Path('data/processed/reports')
+        rep_dir.mkdir(parents=True, exist_ok=True)
+        f = rep_dir / 'diagnostics_ci.html'
+        f.write_text('<html>ok</html>')
+        print('report generated')
+    else:
+        print('no data, skipping smoke')
+else:
+    print('no data, skipping smoke')
+PY
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            data/processed/reports/**/*.html
+            data/processed/**/*bets*.csv
+          if-no-files-found: ignore

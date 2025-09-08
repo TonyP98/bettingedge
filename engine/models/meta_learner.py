@@ -1,4 +1,5 @@
 """Stacked meta learner with optional isotonic calibration."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.isotonic import IsotonicRegression
+from ..utils import mlflow_utils as mlf
 
 
 @dataclass
@@ -29,6 +31,7 @@ class MetaEnsemble:
             params.update(self.params)
         self.model = LGBMClassifier(**params)
         self.model.fit(X_train, y_train)
+        mlf.log_params(params)
         if calibrate:
             raw = self.model.predict_proba(X_train)
             self.calibrators = []
@@ -46,6 +49,7 @@ class MetaEnsemble:
             )
             calibrated = np.clip(calibrated, 1e-12, 1 - 1e-12)
             calibrated /= calibrated.sum(axis=1, keepdims=True)
+            mlf.log_metrics({"calibration": float(calibrated.mean())})
             return calibrated
         return raw
 

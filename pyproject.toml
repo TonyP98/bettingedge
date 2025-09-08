@@ -12,7 +12,7 @@ dependencies = [
     "hydra-core",
     "polars",
     "duckdb",
-    "mlflow",
+    "mlflow>=2.14",
     "pandera",
     "xgboost",
     "lightgbm",
@@ -22,6 +22,7 @@ dependencies = [
     "numba",
     "plotly",
     "streamlit",
+    "kaleido>=0.2.1",
 ]
 
 [project.optional-dependencies]

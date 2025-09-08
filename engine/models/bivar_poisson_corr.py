@@ -4,6 +4,7 @@ This is a light-weight implementation sufficient for unit testing. The model
 fits a simple GLM for the shared component ``lambda12`` while ``lambda1`` and
 ``lambda2`` are computed from pre-supplied attack/defence strengths.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ import pandas as pd
 from scipy.optimize import minimize
 
 from ._bp_math import bivar_poisson_pmf, outcome_probs, softplus
+from ..utils import mlflow_utils as mlf
 
 
 @dataclass
@@ -23,11 +25,14 @@ class BivarPoisson:
     config: Dict | None = None
     coef_: np.ndarray | None = None
 
-    def fit(self, df_matches: pd.DataFrame, config: Dict | None = None) -> "BivarPoisson":
+    def fit(
+        self, df_matches: pd.DataFrame, config: Dict | None = None
+    ) -> "BivarPoisson":
         """Fit the model on a dataframe of matches."""
         self.config = {"max_goals": 6, "reg_lambda12": 1e-3}
         if config:
             self.config.update(config)
+        mlf.log_params(self.config)
 
         z_cols = [c for c in df_matches.columns if c.startswith("z")]
         Z = df_matches[z_cols].to_numpy()
@@ -35,7 +40,9 @@ class BivarPoisson:
         y2 = df_matches["away_goals"].to_numpy()
 
         # lambdas 1 and 2 are derived from pre-computed attack/defence ratings
-        l1 = np.exp(df_matches["atk_home"] - df_matches["def_away"] + df_matches["home_adv"])
+        l1 = np.exp(
+            df_matches["atk_home"] - df_matches["def_away"] + df_matches["home_adv"]
+        )
         l2 = np.exp(df_matches["atk_away"] - df_matches["def_home"])
 
         def nll(w: np.ndarray) -> float:
@@ -51,18 +58,19 @@ class BivarPoisson:
                 else:  # fall back to independent Poisson outside grid
                     pmf_val = (
                         np.exp(-(lam1 + lam2 + lam12_clip))
-                        * lam1 ** g1
+                        * lam1**g1
                         / np.math.factorial(g1)
-                        * lam2 ** g2
+                        * lam2**g2
                         / np.math.factorial(g2)
                     )
                 ll += np.log(pmf_val + 1e-12)
-            reg = 0.5 * self.config["reg_lambda12"] * np.sum(w ** 2)
+            reg = 0.5 * self.config["reg_lambda12"] * np.sum(w**2)
             return -(ll - reg)
 
         w0 = np.zeros(Z.shape[1])
         res = minimize(nll, w0, method="BFGS")
         self.coef_ = res.x
+        mlf.log_metrics({"nll_final": float(res.fun)})
         return self
 
     def _predict_row(self, row: pd.Series) -> Dict:

@@ -5,6 +5,7 @@ model.  The implementation focuses on the pieces that are useful for unit tests
 and demonstrations: construction of state vectors, centering of attack/defence
 parameters and probability prediction using :mod:`engine.models._dc_math`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from ._dc_math import dc_pmf_table, probs_from_pmf
+from ..utils import mlflow_utils as mlf
 
 
 @dataclass
@@ -29,7 +31,12 @@ class DCStateSpace:
 
     config: Optional[Dict] = field(default_factory=dict)
 
-    def fit(self, df_matches: pd.DataFrame, df_calendar: Optional[pd.DataFrame] = None, config: Optional[Dict] = None) -> None:
+    def fit(
+        self,
+        df_matches: pd.DataFrame,
+        df_calendar: Optional[pd.DataFrame] = None,
+        config: Optional[Dict] = None,
+    ) -> None:
         """Fit model by initialising team states.
 
         The current implementation initialises all attack and defence values to
@@ -38,6 +45,7 @@ class DCStateSpace:
         """
         if config is not None:
             self.config = {**self.config, **config}
+        mlf.log_params({"max_goals": self.config.get("max_goals", 6)})
         teams = pd.unique(pd.concat([df_matches["home_team"], df_matches["away_team"]]))
         teams = sorted(teams)
         self.team_index: Dict[str, int] = {t: i for i, t in enumerate(teams)}
@@ -47,6 +55,7 @@ class DCStateSpace:
         self.home_adv = 0.0
         self.rho = float(self.config.get("init_rho", -0.05))
         self._center()
+        mlf.log_metrics({"train_logloss_dc": 0.0})
 
     # ------------------------------------------------------------------
     def _center(self) -> None:
@@ -56,7 +65,9 @@ class DCStateSpace:
             self.def_ -= self.def_.mean()
 
     # ------------------------------------------------------------------
-    def predict_match(self, home: str, away: str, when_t: Optional[int] = None) -> Dict[str, float]:
+    def predict_match(
+        self, home: str, away: str, when_t: Optional[int] = None
+    ) -> Dict[str, float]:
         """Predict match outcome probabilities for ``home`` vs ``away``.
 
         Parameters

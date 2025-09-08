@@ -1,7 +1,9 @@
 """Backtesting utilities for betting strategies."""
+
 from __future__ import annotations
 
 from typing import List
+from pathlib import Path
 
 import hydra
 import numpy as np
@@ -14,6 +16,7 @@ from ..online.bandits import make_bandit
 from .metrics import average_width, empirical_coverage, validity_gap
 from .replay import replay_bandit
 from .diagnostics import run_diagnostics
+from ..utils import mlflow_utils as mlf
 
 
 def apply_conformal_guard(df: pd.DataFrame, cfg: DictConfig) -> pd.DataFrame:
@@ -52,7 +55,10 @@ def apply_conformal_guard(df: pd.DataFrame, cfg: DictConfig) -> pd.DataFrame:
 
     stakes: List[float] = []
     for i in range(len(df)):
-        if lower_edge_rule(p_low[i], odds[i, best[i]], cfg.policy.edge_thr) and width[i] <= cfg.policy.max_width:
+        if (
+            lower_edge_rule(p_low[i], odds[i, best[i]], cfg.policy.edge_thr)
+            and width[i] <= cfg.policy.max_width
+        ):
             stake = conformal_kelly(
                 p_low[i],
                 odds[i, best[i]],
@@ -97,8 +103,14 @@ def main(cfg: DictConfig) -> None:  # pragma: no cover - demonstration
             "match_id": ["m1", "m2"],
         }
     )
+    mlf.start_run("backtest", run_name="demo")
     if cfg.policy.mode == "bandit":
         logs = run_bandit_policy(df, cfg)
+        mlf.log_metrics({"ROI": float(logs["pnl"].sum())})
+        path = Path("data/processed/bet_logs_demo.csv")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        logs.to_csv(path, index=False)
+        mlf.log_artifact(str(path))
         print(logs.head())
     else:
         df = apply_conformal_guard(df, cfg)
@@ -110,7 +122,10 @@ def main(cfg: DictConfig) -> None:  # pragma: no cover - demonstration
         print("coverage", cov)
         print(df)
     if getattr(cfg, "diagnostics", None) and cfg.diagnostics.get("enable", False):  # type: ignore[attr-defined]
-        run_diagnostics()
+        report_path = run_diagnostics() or "data/processed/reports/diagnostics.html"
+        if isinstance(report_path, str):
+            mlf.log_artifact(report_path)
+    mlf.end_run()
 
 
 if __name__ == "__main__":  # pragma: no cover

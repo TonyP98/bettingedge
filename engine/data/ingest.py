@@ -1,4 +1,5 @@
 """Data ingestion utilities for football-data CSV files."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,6 +14,7 @@ from importlib.resources import files
 
 from .vig import remove_vig_multiplicative, remove_vig_shin
 from .bookmaker_fusion import fuse_1x2
+from .contracts import MatchesSchema, MarketProbsSchema, validate_or_raise
 
 try:
     SPEC_PATH = files("engine.data.specs") / "football_data_keys.yaml"
@@ -34,15 +36,15 @@ def load_spec() -> Dict:
 
 def parse_event_time(df: pd.DataFrame, spec: Dict) -> pd.DataFrame:
     tz = ZoneInfo(spec["constraints"]["timezone"])
-    date_fmt = "%d/%m/%y %H:%M"
-    df["event_time_local"] = pd.to_datetime(
+    date_fmt = "%d/%m/%Y %H:%M"
+    event_time = pd.to_datetime(
         df["Date"].astype(str) + " " + df.get("Time", "00:00"),
         format=date_fmt,
         errors="coerce",
     ).dt.tz_localize(tz)
-    df["event_time"] = df["event_time_local"].dt.tz_convert("UTC")
+    df["event_time"] = event_time.dt.strftime("%Y-%m-%dT%H:%M:%S%z")
     df["MatchId"] = (
-        df["event_time_local"].dt.strftime("%Y-%m-%d")
+        event_time.dt.strftime("%Y-%m-%d")
         + "_"
         + df["HomeTeam"].astype(str)
         + "_"
@@ -66,7 +68,7 @@ def parse_results(df: pd.DataFrame, spec: Dict) -> pd.DataFrame:
     cols = spec["results"]["required"] + [
         c for c in spec["results"].get("optional", []) if c in df.columns
     ]
-    res = df[["MatchId", "event_time", "event_time_local"] + cols].copy()
+    res = df[["MatchId", "event_time"] + cols].copy()
     return res
 
 
@@ -93,17 +95,39 @@ def parse_odds(df: pd.DataFrame, spec: Dict):
 def parse_ou_ah(df: pd.DataFrame, spec: Dict):
     ou_pre_cols = [c for c in spec["ou_25_pre"]["fields"] if c in df.columns]
     ou_close_cols = [c for c in spec["ou_25_close"]["fields"] if c in df.columns]
-    ah_pre_cols = [c for c in spec["asian_handicap_pre"]["fields_any"] if c in df.columns]
-    ah_close_cols = [c for c in spec["asian_handicap_close"]["fields_any"] if c in df.columns]
+    ah_pre_cols = [
+        c for c in spec["asian_handicap_pre"]["fields_any"] if c in df.columns
+    ]
+    ah_close_cols = [
+        c for c in spec["asian_handicap_close"]["fields_any"] if c in df.columns
+    ]
 
-    ou_pre = _cast_numeric(df[["MatchId"] + ou_pre_cols].copy(), spec) if ou_pre_cols else None
-    ou_close = _cast_numeric(df[["MatchId"] + ou_close_cols].copy(), spec) if ou_close_cols else None
-    ah_pre = _cast_numeric(df[["MatchId"] + ah_pre_cols].copy(), spec) if ah_pre_cols else None
-    ah_close = _cast_numeric(df[["MatchId"] + ah_close_cols].copy(), spec) if ah_close_cols else None
+    ou_pre = (
+        _cast_numeric(df[["MatchId"] + ou_pre_cols].copy(), spec)
+        if ou_pre_cols
+        else None
+    )
+    ou_close = (
+        _cast_numeric(df[["MatchId"] + ou_close_cols].copy(), spec)
+        if ou_close_cols
+        else None
+    )
+    ah_pre = (
+        _cast_numeric(df[["MatchId"] + ah_pre_cols].copy(), spec)
+        if ah_pre_cols
+        else None
+    )
+    ah_close = (
+        _cast_numeric(df[["MatchId"] + ah_close_cols].copy(), spec)
+        if ah_close_cols
+        else None
+    )
     return ou_pre, ou_close, ah_pre, ah_close
 
 
-def compute_market_probs(matches: pd.DataFrame, odds_pre: pd.DataFrame, odds_close: pd.DataFrame | None) -> Dict[str, pd.DataFrame]:
+def compute_market_probs(
+    matches: pd.DataFrame, odds_pre: pd.DataFrame, odds_close: pd.DataFrame | None
+) -> Dict[str, pd.DataFrame]:
     tables = {}
 
     if {"AvgH", "AvgD", "AvgA"}.issubset(odds_pre.columns):
@@ -133,10 +157,14 @@ def compute_market_probs(matches: pd.DataFrame, odds_pre: pd.DataFrame, odds_clo
 
         fused = odds_pre.apply(fuse_row, axis=1)
 
-    base = pd.DataFrame({"MatchId": odds_pre["MatchId"], "H": fused[0], "D": fused[1], "A": fused[2]})
+    base = pd.DataFrame(
+        {"MatchId": odds_pre["MatchId"], "H": fused[0], "D": fused[1], "A": fused[2]}
+    )
 
     probs_mul = base.apply(
-        lambda r: remove_vig_multiplicative(r["H"], r["D"], r["A"]), axis=1, result_type="expand"
+        lambda r: remove_vig_multiplicative(r["H"], r["D"], r["A"]),
+        axis=1,
+        result_type="expand",
     )
     probs_shin = base.apply(
         lambda r: remove_vig_shin(r["H"], r["D"], r["A"]), axis=1, result_type="expand"
@@ -159,14 +187,21 @@ def compute_market_probs(matches: pd.DataFrame, odds_pre: pd.DataFrame, odds_clo
     )
     tables["market_probs_pre"] = market_probs_pre
 
-    if odds_close is not None and {"AvgCH", "AvgCD", "AvgCA"}.issubset(odds_close.columns):
+    if odds_close is not None and {"AvgCH", "AvgCD", "AvgCA"}.issubset(
+        odds_close.columns
+    ):
         fused_close = odds_close.apply(
             lambda r: fuse_1x2([(r["AvgCH"], r["AvgCD"], r["AvgCA"])])[:3],
             axis=1,
             result_type="expand",
         )
         base = pd.DataFrame(
-            {"MatchId": odds_close["MatchId"], "H": fused_close[0], "D": fused_close[1], "A": fused_close[2]}
+            {
+                "MatchId": odds_close["MatchId"],
+                "H": fused_close[0],
+                "D": fused_close[1],
+                "A": fused_close[2],
+            }
         )
         probs_mul = base.apply(
             lambda r: remove_vig_multiplicative(r["H"], r["D"], r["A"]),
@@ -214,6 +249,7 @@ def ingest(source: str, commit: bool) -> Dict[str, pd.DataFrame]:
     df = df.dropna(axis=1, how="all")
     df = parse_event_time(df, spec)
     results = parse_results(df, spec)
+    validate_or_raise(results, MatchesSchema, "matches")
     odds_pre, odds_close = parse_odds(df, spec)
     ou_pre, ou_close, ah_pre, ah_close = parse_ou_ah(df, spec)
     tables = {
@@ -232,6 +268,14 @@ def ingest(source: str, commit: bool) -> Dict[str, pd.DataFrame]:
         tables["ah_close"] = ah_close
 
     tables.update(compute_market_probs(results, odds_pre, odds_close))
+    if "market_probs_pre" in tables:
+        validate_or_raise(
+            tables["market_probs_pre"][["pH_mul", "pD_mul", "pA_mul"]].rename(
+                columns={"pH_mul": "pH", "pD_mul": "pD", "pA_mul": "pA"}
+            ),
+            MarketProbsSchema,
+            "market_probs_pre",
+        )
 
     if commit:
         save_tables(tables)
@@ -242,10 +286,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest raw data sources.")
     parser.add_argument("--source", required=True, help="CSV file to ingest")
     parser.add_argument("--commit", action="store_true", help="persist to duckdb")
-    parser.add_argument("--dry-run", action="store_true", help="print schema and sample")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print schema and sample"
+    )
     args = parser.parse_args()
 
-    tables = ingest(args.source, commit=args.commit)
+    try:
+        tables = ingest(args.source, commit=args.commit)
+    except Exception as e:  # pragma: no cover - CLI path
+        print(f"Validation error: {e}")
+        raise SystemExit(1)
     if args.dry_run:
         for name, df in tables.items():
             print(f"=== {name} ({len(df)} rows) ===")
