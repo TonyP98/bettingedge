@@ -10,7 +10,9 @@ from omegaconf import DictConfig
 
 from ..risk.conformal import ConformalIntervalPredictor, MondrianIndexer
 from ..risk.thresholds import conformal_kelly, lower_edge_rule
+from ..online.bandits import make_bandit
 from .metrics import average_width, empirical_coverage, validity_gap
+from .replay import replay_bandit
 
 
 def apply_conformal_guard(df: pd.DataFrame, cfg: DictConfig) -> pd.DataFrame:
@@ -68,6 +70,14 @@ def apply_conformal_guard(df: pd.DataFrame, cfg: DictConfig) -> pd.DataFrame:
     return df
 
 
+def run_bandit_policy(df: pd.DataFrame, cfg: DictConfig) -> pd.DataFrame:
+    """Execute a bandit policy replay over ``df``."""
+
+    bandit = make_bandit(cfg.bandit)
+    logs = replay_bandit(df, bandit, cfg.bandit)
+    return logs
+
+
 @hydra.main(config_path="../config", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:  # pragma: no cover - demonstration
     """Entry point for the backtester CLI."""
@@ -81,16 +91,23 @@ def main(cfg: DictConfig) -> None:  # pragma: no cover - demonstration
             "oD": [3.1, 3.0],
             "oA": [3.2, 3.4],
             "y": [0, 1],
+            "pnl": [0.1, -0.05],
+            "stake": [0.02, 0.0],
+            "match_id": ["m1", "m2"],
         }
     )
-    df = apply_conformal_guard(df, cfg)
-    cov = empirical_coverage(
-        df[["pH_low", "pD_low", "pA_low"]].to_numpy(),
-        df[["pH_high", "pD_high", "pA_high"]].to_numpy(),
-        df["y"].to_numpy(),
-    )
-    print("coverage", cov)
-    print(df)
+    if cfg.policy.mode == "bandit":
+        logs = run_bandit_policy(df, cfg)
+        print(logs.head())
+    else:
+        df = apply_conformal_guard(df, cfg)
+        cov = empirical_coverage(
+            df[["pH_low", "pD_low", "pA_low"]].to_numpy(),
+            df[["pH_high", "pD_high", "pA_high"]].to_numpy(),
+            df["y"].to_numpy(),
+        )
+        print("coverage", cov)
+        print(df)
 
 
 if __name__ == "__main__":  # pragma: no cover
