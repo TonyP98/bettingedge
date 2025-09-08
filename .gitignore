@@ -8,3 +8,5 @@ mlruns/
 .hydra/
 data/processed/*.parquet
 data/processed/*.duckdb
+ui/.streamlit/
+data/processed/reports/
