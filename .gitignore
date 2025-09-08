@@ -4,6 +4,7 @@ __pycache__/
 .env.*
 !.env.example
 .venv/
-data/processed/
 mlruns/
 .hydra/
+data/processed/*.parquet
+data/processed/*.duckdb
