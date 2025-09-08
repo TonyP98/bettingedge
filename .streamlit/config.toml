@@ -1,0 +1,9 @@
+[server]
+# Avoid hitting Linux inotify limits on Streamlit Cloud/containers:
+# switch watcher from 'auto' (inotify) to 'poll' (portable, no limits).
+fileWatcherType = "poll"
+
+# (facoltativo, comodo)
+headless = true
+runOnSave = true
+enableCORS = false
