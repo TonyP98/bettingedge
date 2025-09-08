@@ -1,0 +1,4 @@
+rolling:
+  window: 30
+folds: 3
+policy: hold
