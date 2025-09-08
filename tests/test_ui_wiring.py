@@ -1,6 +1,4 @@
 import importlib.util
-import types
-import importlib.util
 import sys
 
 import pandas as pd
@@ -18,6 +16,16 @@ def test_data_load_rebuild(monkeypatch, tmp_path):
     # stub streamlit
     class STubs:
         session_state = {}
+
+        def cache_resource(self, func=None, **k):
+            if func is None:
+                return lambda f: f
+            return func
+
+        def cache_data(self, func=None, **k):
+            if func is None:
+                return lambda f: f
+            return func
 
         def file_uploader(self, *a, **k):
             return None
@@ -53,16 +61,29 @@ def test_data_load_rebuild(monkeypatch, tmp_path):
         def write(self, *a, **k):
             return None
 
+        def error(self, *a, **k):
+            return None
+
+        def code(self, *a, **k):
+            return None
+
+        def dataframe(self, *a, **k):
+            return None
+
     stubs = STubs()
     monkeypatch.setitem(sys.modules, "streamlit", stubs)
     # patch read_duck to provide minimal tables
+    expected_matches = pd.DataFrame({"MatchId": [1], "event_time_local": ["2020-01-01"]})
+    expected_pre = pd.DataFrame({"MatchId": [1], "AvgH": [2.0], "AvgD": [3.0], "AvgA": [4.0]})
+    expected_close = pd.DataFrame({"MatchId": [1], "AvgCH": [2.0], "AvgCD": [3.0], "AvgCA": [4.0]})
+
     def fake_read(query):
         if "matches" in query:
-            return pd.DataFrame({"MatchId": [1], "event_time_local": ["2020-01-01"]})
+            return expected_matches
         if "odds_1x2_pre" in query:
-            return pd.DataFrame({"MatchId": [1], "AvgH": [2.0], "AvgD": [3.0], "AvgA": [4.0]})
+            return expected_pre
         if "odds_1x2_close" in query:
-            return pd.DataFrame({"MatchId": [1], "AvgCH": [2.0], "AvgCD": [3.0], "AvgCA": [4.0]})
+            return expected_close
         return pd.DataFrame()
 
     monkeypatch.setattr("ui._io.read_duck", fake_read)
@@ -79,8 +100,12 @@ def test_data_load_rebuild(monkeypatch, tmp_path):
     monkeypatch.setattr("engine.data.ingest.compute_market_probs", fake_cmp)
     monkeypatch.setattr("engine.data.ingest.save_tables", fake_save)
 
-    load_module("bettingedge/ui/pages/01_📥_Data_Load.py", "data_load")
+    load_module("ui/pages/01_📥_Data_Load.py", "data_load")
     assert "args" in called and "saved" in called
+    m, p, c = called["args"]
+    assert m.equals(expected_matches)
+    assert p.equals(expected_pre)
+    assert c.equals(expected_close)
 
 
 def test_backtest_calls_engine(monkeypatch, tmp_path):
