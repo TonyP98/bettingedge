@@ -1,0 +1,41 @@
+results:
+  required: [Div, Date, Time, HomeTeam, AwayTeam, FTHG, FTAG, FTR]
+  optional: [HTHG, HTAG, HTR]
+
+odds_1x2_pre:
+  fields: []  # filled dynamically with all bookmaker columns plus aggregates
+
+odds_1x2_close:
+  fields: [B365CH, B365CD, B365CA, AvgCH, AvgCD, AvgCA, MaxCH, MaxCD, MaxCA]
+
+ou_25_pre:
+  required_any: [BbOU]
+  fields: [BbMx>2.5, BbAv>2.5, BbMx<2.5, BbAv<2.5]
+
+ou_25_close:
+  fields: [AvgC>2.5, AvgC<2.5]
+
+asian_handicap_pre:
+  fields_any: [BbAH, BbAHh, AHh, BbMxAHH, BbMxAHA, BbAvAHH, BbAvAHA]
+
+asian_handicap_close:
+  fields_any: [BbCAHH, BbCAHA, BFECAHH, BFECAHA, PCAHH, PCAHA, AHC, AHCh]
+
+aliases:
+  FTHG: [FTHG, HG]
+  FTAG: [FTAG, AG]
+  FTR:  [FTR, Res]
+  HTHG: [HTHG]
+  HTAG: [HTAG]
+  HTR:  [HTR]
+
+constraints:
+  min_odds: 1.01
+  max_odds: 200.0
+  max_overround_1x2: 1.25
+  timezone: Europe/Rome
+  date_format: dd/mm/yy
+
+notes:
+  closing_suffix: "C"
+  description: "Qualsiasi campo odds con suffisso 'C' è closing; aggregati Avg/Max ammessi."

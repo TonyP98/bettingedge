@@ -6,7 +6,11 @@ import random
 from typing import Any
 
 import numpy as np
-from hydra import compose, initialize_config_module
+
+try:  # pragma: no cover - optional dependency
+    from hydra import compose, initialize_config_module
+except Exception:  # pragma: no cover - hydra not installed
+    compose = initialize_config_module = None
 
 
 def set_seed(seed: int) -> None:
