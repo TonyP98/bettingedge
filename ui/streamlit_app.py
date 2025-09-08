@@ -15,6 +15,22 @@ from datetime import datetime
 
 import streamlit as st
 
+import os
+from pathlib import Path
+import streamlit as st
+
+# 1) Leggi il valore dai secrets e crea una cartella scrivibile su Cloud
+tracking_uri = st.secrets.get("MLFLOW_TRACKING_URI", "file:/var/tmp/mlruns")
+Path("/var/tmp/mlruns").mkdir(parents=True, exist_ok=True)  # /var/tmp è scrivibile su Cloud
+
+# 2) Espone la variabile d'ambiente per eventuale codice che la legge da os.environ
+os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
+
+# (facoltativo ma sicuro) Imposta anche via API MLflow se lo importi più sotto:
+import mlflow
+mlflow.set_tracking_uri(tracking_uri)
+
+
 from ui._state import DUCK_PATH, init_defaults
 from ui._theme import inject_theme
 
