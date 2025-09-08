@@ -1,0 +1,4 @@
+model_a:
+  learning_rate: 0.1
+model_b:
+  depth: 3

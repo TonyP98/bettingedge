@@ -1,0 +1,23 @@
+[project]
+name = "bettingedge"
+version = "0.1.0"
+description = "BettingEdge engine."
+requires-python = ">=3.10"
+dependencies = [
+    "hydra-core",
+    "polars",
+    "duckdb",
+    "mlflow",
+    "pandera",
+    "xgboost",
+    "lightgbm",
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "numba",
+    "plotly",
+    "streamlit",
+]
+
+[project.optional-dependencies]
+torch = ["torch"]
