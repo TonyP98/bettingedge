@@ -15,6 +15,11 @@ __all__ = [
     "diagnostics_reliability_schema",
     "diagnostics_pit_schema",
     "diagnostics_regimes_schema",
+    "explain_shap_global_schema",
+    "explain_shap_local_schema",
+    "explain_rules_schema",
+    "explain_rules_summary_schema",
+    "whatif_logs_schema",
 ]
 
 
@@ -157,6 +162,73 @@ diagnostics_regimes_schema = DataFrameSchema(
         "regime_id": Column(pa.Int64),
         "n": Column(pa.Int64),
         "kpi_json": Column(pa.Object),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+explain_shap_global_schema = DataFrameSchema(
+    {
+        "feature": Column(pa.String),
+        "mean_abs": Column(pa.Float64),
+        "fold": Column(pa.Int64),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+explain_shap_local_schema = DataFrameSchema(
+    {
+        "match_id": Column(pa.String),
+        "fold": Column(pa.Int64),
+        "feature": Column(pa.String),
+        "shap_value": Column(pa.Float64),
+        "base_value": Column(pa.Float64),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+explain_rules_schema = DataFrameSchema(
+    {
+        "rule_id": Column(pa.String),
+        "rule": Column(pa.String),
+        "depth": Column(pa.Int64),
+        "support": Column(pa.Int64),
+        "coverage": Column(pa.Float64),
+        "precision": Column(pa.Float64),
+        "lift": Column(pa.Float64),
+        "fold": Column(pa.Int64),
+        "regime_id": Column(pa.Int64, nullable=True),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+explain_rules_summary_schema = DataFrameSchema(
+    {
+        "stat": Column(pa.String),
+        "value": Column(pa.Float64),
+        "fold": Column(pa.Int64),
+        "created_at": Column(pa.DateTime),
+    },
+    coerce=True,
+)
+
+
+whatif_logs_schema = DataFrameSchema(
+    {
+        "match_id": Column(pa.String),
+        "feature": Column(pa.String),
+        "v0": Column(pa.Float64),
+        "v1": Column(pa.Float64),
+        "delta_p": Column(pa.Float64),
+        "delta_edge": Column(pa.Float64),
+        "policy": Column(pa.String),
         "created_at": Column(pa.DateTime),
     },
     coerce=True,

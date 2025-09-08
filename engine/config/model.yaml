@@ -36,3 +36,15 @@ conformal:
   mondrian_keys: []
   min_group_size: 100
   width_cap: 0.6
+
+explain:
+  shap:
+    bg_size: 2000
+    topk_local: 8
+  playbook:
+    edge_thr: 0.02
+    min_coverage: 0.02
+    min_precision: 0.55
+    min_lift: 1.2
+    max_depth: 4
+    n_rules: 200
