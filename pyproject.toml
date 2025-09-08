@@ -35,6 +35,11 @@ dev = [
   "mypy>=1.8",
 ]
 torch = ["torch"]
+explain = [
+  "shap>=0.45.0",        # wheel manylinux, compat con numpy recente
+  "lightgbm>=4.3.0",     # wheel manylinux
+  "imodels>=1.4.7; python_version >= '3.9'",  # opzionale; se manca, test devono skippare
+]
 
 [project.scripts]
 bettingedge-keys = "engine.ingest.keys:main"

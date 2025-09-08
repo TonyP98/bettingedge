@@ -6,7 +6,6 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
-import shap
 
 __all__ = ["shap_global", "shap_local"]
 
@@ -22,6 +21,11 @@ def _get_shap_values(model, X_bg: pd.DataFrame, X_eval: pd.DataFrame):
     X_eval : pd.DataFrame
         Evaluation dataset for which SHAP values are required.
     """
+    try:
+        import shap
+    except ImportError as e:
+        raise RuntimeError("shap non è installato: pip install .[explain]") from e
+
     explainer = shap.TreeExplainer(
         model,
         X_bg,
