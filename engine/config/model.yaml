@@ -15,3 +15,18 @@ model_a:
   learning_rate: 0.1
 model_b:
   depth: 3
+
+bivar_poisson:
+  max_goals: 6
+  max_iter: 200
+  tol: 1e-6
+  reg_lambda12: 1e-3
+
+meta_learner:
+  lib: lightgbm
+  params:
+    num_leaves: 31
+    learning_rate: 0.05
+    n_estimators: 500
+    min_data_in_leaf: 50
+  calibrate: true
