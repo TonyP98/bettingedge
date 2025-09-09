@@ -145,6 +145,7 @@ def _generate_picks(
     ev_min: float,
     stake_mode: str,
     stake_fraction: float,
+    bankroll: float,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict]]:
     df_matches = load_matches(div)
     df_probs = load_probs(div)
@@ -168,9 +169,15 @@ def _generate_picks(
             market=mkt,
             use_model_probs=model_source,
         )
-        sigs = sizing.size_positions(sigs, mode=stake_mode, fraction=stake_fraction)
-        eq_df, tr_df, met = simulate.run(sigs, market=mkt)
-        equity_dfs.append(eq_df)
+        sigs = sizing.size_positions(
+            sigs, mode=stake_mode, fraction=stake_fraction, bankroll=bankroll
+        )
+        eq_df, tr_df, met = simulate.run(sigs, bankroll=bankroll, market=mkt)
+        tr_df = tr_df.sort_values("date").reset_index(drop=True)
+        eq_from_trades = tr_df[["date"]].copy()
+        eq_from_trades["market"] = mkt
+        eq_from_trades["equity"] = bankroll + tr_df["pnl"].cumsum()
+        equity_dfs.append(eq_from_trades)
         trades_dfs.append(tr_df)
         metrics_by_market[mkt] = met
 
@@ -192,6 +199,7 @@ def render_backtest_panel() -> None:
     ev_min = st.number_input("EV_min", value=0.0, step=0.01)
     stake_mode = st.selectbox("Stake mode", ["fixed", "kelly_f"], index=0)
     stake_fraction = st.number_input("Stake fraction", value=0.01, step=0.01)
+    bankroll = st.number_input("Equity iniziale", value=1.0, step=0.1)
     markets = st.multiselect(
         "Mercati", ["1x2", "ou25", "dnb", "dc", "ah"], default=["1x2"]
     )
@@ -199,7 +207,7 @@ def render_backtest_panel() -> None:
     if st.button("Genera picks & Backtest"):
         with st.spinner("Simulazione..."):
             equity_df, trades_df, metrics = _generate_picks(
-                div, markets, ev_min, stake_mode, stake_fraction
+                div, markets, ev_min, stake_mode, stake_fraction, bankroll
             )
         st.session_state.update(
             {
@@ -210,6 +218,7 @@ def render_backtest_panel() -> None:
                 "ev_min": ev_min,
                 "stake_mode": stake_mode,
                 "stake_fraction": stake_fraction,
+                "bankroll": bankroll,
                 "markets": markets,
             }
         )
@@ -238,6 +247,7 @@ def render_backtest_panel() -> None:
                 "ev_min": st.session_state["ev_min"],
                 "stake_mode": st.session_state["stake_mode"],
                 "stake_fraction": st.session_state["stake_fraction"],
+                "bankroll": st.session_state["bankroll"],
                 "train_until": splits.get("train_until"),
                 "test_from": splits.get("test_from"),
             }
