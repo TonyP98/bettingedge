@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -156,6 +157,9 @@ def test_backtest_calls_engine(monkeypatch, tmp_path):
         def header(self, *a, **k):
             return None
 
+        def subheader(self, *a, **k):
+            return None
+
         def selectbox(self, *a, **k):
             return None
 
@@ -172,6 +176,9 @@ def test_backtest_calls_engine(monkeypatch, tmp_path):
             return None
 
         def info(self, *a, **k):
+            return None
+
+        def warning(self, *a, **k):
             return None
 
         def error(self, *a, **k):
@@ -198,6 +205,21 @@ def test_backtest_calls_engine(monkeypatch, tmp_path):
     monkeypatch.setattr("engine.utils.mlflow_utils.log_artifact", lambda *a, **k: None)
     monkeypatch.setattr("engine.utils.mlflow_utils.end_run", lambda *a, **k: None)
     (tmp_path / "d.html").write_text("<html></html>")
+
+    class DummyClient:
+        def get_run(self, run_id):
+            return SimpleNamespace(info=SimpleNamespace(experiment_id="0", artifact_uri="file:/tmp"))
+
+        def get_metric_history(self, run_id, key):
+            return []
+
+        def get_experiment_by_name(self, name):
+            return None
+
+        def search_runs(self, *a, **k):
+            return []
+
+    monkeypatch.setattr("mlflow.tracking.MlflowClient", lambda: DummyClient())
 
     load_module("ui/pages/04_📈_Backtest.py", "backtest")
     assert called.get("apply")
