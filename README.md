@@ -14,10 +14,12 @@ pip install -e .[dev]
 ```bash
 # build canonical dataset
 python -m engine.pipeline --rebuild-canonical --div I1 --seasons all
-# build market model
-python -m engine.pipeline --build-market --div I1 --train-ratio 0.8 --calibrate
+# build market model (using market implied probabilities)
+python -m engine.pipeline --build-market --div I1 --train-ratio 0.8 --calibrate --model-source market
+# generate picks for multiple markets
+python -m engine.pipeline --picks --div I1 --ev-min 0.02 --markets 1x2 ou25
 # optional quick backtest
-python -m engine.pipeline --ev-min 0.02 --stake-mode fixed --stake-fraction 0.01 --div I1
+python -m engine.pipeline --picks --div I1 --ev-min 0.02 --stake-mode fixed --stake-fraction 0.01
 # launch UI
 streamlit run ui/streamlit_app.py
 ```
@@ -33,6 +35,14 @@ data/
 scripts/     helper scripts
 runs/        experiment outputs (gitignored)
 ```
+
+## Supported markets
+
+- `1x2` – home/draw/away
+- `ou25` – over/under 2.5 goals
+- `dnb` – draw no bet
+- `dc` – double chance
+- `ah` – Asian handicap (quarter lines supported)
 
 ## Commands
 

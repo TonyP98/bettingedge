@@ -8,7 +8,7 @@ import numpy as np
 
 from engine.data.loader import unify
 from engine.io import persist, runs
-from engine.market import calibrate, odds
+from engine.market import calibrate, odds, markets as market_defs
 from engine.model import poisson
 from engine.signal import value, sizing
 from engine.backtest import simulate
@@ -182,6 +182,8 @@ def generate_picks(
             "stake_fraction": stake_fraction,
             "train_until": splits.get("train_until"),
             "test_from": splits.get("test_from"),
+            "markets": markets,
+            "model_source": model_source,
         }
         persist.save_json(config, run_dir / "config.json")
 
@@ -190,24 +192,41 @@ def generate_picks(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="BettingEdge pipeline")
-    parser.add_argument("--rebuild-canonical", action="store_true")
-    parser.add_argument("--build-market", action="store_true")
-    parser.add_argument("--div", required=True)
-    parser.add_argument("--seasons", nargs="*", default=[])
-    parser.add_argument("--train-ratio", type=float, default=0.8)
-    parser.add_argument("--train-until")
+    parser.add_argument("--rebuild-canonical", action="store_true",
+                        help="rebuild unified dataset")
+    parser.add_argument("--build-market", action="store_true",
+                        help="fit probability model")
+    parser.add_argument("--div", required=True, help="division code e.g. I1")
+    parser.add_argument("--seasons", nargs="*", default=[],
+                        help="seasons to include or 'all'")
+    parser.add_argument("--train-ratio", type=float, default=0.8,
+                        help="train/test split ratio")
+    parser.add_argument("--train-until", help="split date YYYY-MM-DD")
     parser.add_argument(
-        "--calibrate", action=argparse.BooleanOptionalAction, default=True
+        "--calibrate", action=argparse.BooleanOptionalAction, default=True,
+        help="apply isotonic calibration"
     )
     parser.add_argument(
-        "--model-source", choices=["market", "poisson", "blend"], default="market"
+        "--model-source", choices=["market", "poisson", "blend"], default="market",
+        help="probabilities used for modelling"
     )
-    parser.add_argument("--picks", action="store_true")
-    parser.add_argument("--markets", nargs="*", default=["1x2"])
-    parser.add_argument("--ev-min", type=float, default=0.0)
-    parser.add_argument("--stake-mode", choices=["fixed", "kelly_f"], default="fixed")
-    parser.add_argument("--stake-fraction", type=float, default=0.01)
-    parser.add_argument("--save-run", action="store_true")
+    parser.add_argument("--picks", action="store_true", help="generate picks")
+    parser.add_argument(
+        "--markets",
+        nargs="*",
+        default=["1x2"],
+        choices=list(market_defs.MARKETS.keys()),
+        help="markets to evaluate",
+    )
+    parser.add_argument("--ev-min", type=float, default=0.0,
+                        help="minimum expected value")
+    parser.add_argument(
+        "--stake-mode", choices=["fixed", "kelly_f"], default="fixed",
+        help="position sizing mode",
+    )
+    parser.add_argument("--stake-fraction", type=float, default=0.01,
+                        help="fraction of bankroll per bet")
+    parser.add_argument("--save-run", action="store_true", help="persist run outputs")
     args = parser.parse_args(argv)
 
     seasons = None if not args.seasons or args.seasons == ["all"] else args.seasons
