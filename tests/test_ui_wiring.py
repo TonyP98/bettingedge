@@ -67,6 +67,15 @@ def test_data_load_rebuild(monkeypatch, tmp_path):
         def code(self, *a, **k):
             return None
 
+        def code(self, *a, **k):
+            return None
+
+        def code(self, *a, **k):
+            return None
+
+        def code(self, *a, **k):
+            return None
+
         def dataframe(self, *a, **k):
             return None
 
@@ -168,6 +177,9 @@ def test_backtest_calls_engine(monkeypatch, tmp_path):
         def error(self, *a, **k):
             return None
 
+        def code(self, *a, **k):
+            return None
+
     st = STub()
     monkeypatch.setitem(sys.modules, "streamlit", st)
 
@@ -187,5 +199,5 @@ def test_backtest_calls_engine(monkeypatch, tmp_path):
     monkeypatch.setattr("engine.utils.mlflow_utils.end_run", lambda *a, **k: None)
     (tmp_path / "d.html").write_text("<html></html>")
 
-    load_module("bettingedge/ui/pages/04_📈_Backtest.py", "backtest")
+    load_module("ui/pages/04_📈_Backtest.py", "backtest")
     assert called.get("apply")
