@@ -30,6 +30,8 @@ if "artifacts_root" not in st.session_state:
 if "show_artifacts" not in st.session_state:
     st.session_state["show_artifacts"] = False
 
+run_id = st.session_state.get("mlflow_run_id") or "no_run"
+
 # MLflow tracking resolution
 tracking_uri = (
     os.environ.get("MLFLOW_TRACKING_URI")
@@ -148,6 +150,7 @@ with backtest_tab:
                     data=eq_file.read_bytes(),
                     file_name="equity.csv",
                     mime="text/csv",
+                    key=f"equity-{run_id}",
                 )
             except Exception as e:
                 st.error(f"Errore nel leggere equity.csv: {e}")
@@ -157,11 +160,15 @@ with backtest_tab:
         if st.button("Apri cartella artifact"):
             st.session_state["show_artifacts"] = True
         if st.session_state.get("show_artifacts"):
-            for p in sorted(Path(art_root).glob("*")):
+            for idx, p in enumerate(sorted(Path(art_root).glob("*"))):
                 if p.is_file():
                     mime = "text/html" if p.suffix == ".html" else "text/csv" if p.suffix == ".csv" else None
                     st.download_button(
-                        f"Scarica {p.name}", data=p.read_bytes(), file_name=p.name, mime=mime
+                        f"Scarica {p.name}",
+                        data=p.read_bytes(),
+                        file_name=p.name,
+                        mime=mime,
+                        key=f"artifact-{run_id}-{idx}",
                     )
 
     st.header("Bandit (online)")
@@ -194,6 +201,7 @@ with diag_tab:
                 data=diag_file.read_bytes(),
                 file_name="diagnostics.html",
                 mime="text/html",
+                key=f"diag-{run_id}",
             )
         except Exception as e:
             st.error(f"Errore nel leggere diagnostics.html: {e}")
@@ -214,11 +222,15 @@ with diag_tab:
     if st.button("Open last report"):
         st.session_state["show_artifacts"] = True
     if st.session_state.get("show_artifacts") and art_root:
-        for p in sorted(Path(art_root).glob("*")):
+        for idx, p in enumerate(sorted(Path(art_root).glob("*"))):
             if p.is_file():
                 mime = "text/html" if p.suffix == ".html" else "text/csv" if p.suffix == ".csv" else None
                 st.download_button(
-                    f"Scarica {p.name}", data=p.read_bytes(), file_name=p.name, mime=mime
+                    f"Scarica {p.name}",
+                    data=p.read_bytes(),
+                    file_name=p.name,
+                    mime=mime,
+                    key=f"diag-artifact-{run_id}-{idx}",
                 )
 
     metrics = {"ECE": "n/d", "Brier": "n/d", "KS-p": "n/d", "Regimes": "n/d"}
