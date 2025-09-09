@@ -54,8 +54,22 @@ def unify(div: str, seasons: Iterable[str] | None = None) -> pd.DataFrame:
             "B365A": "odds_2",
             "FTHG": "ft_home_goals",
             "FTAG": "ft_away_goals",
+            "BbAv>2.5": "odds_over25",
+            "BbAv<2.5": "odds_under25",
+            "BbAHh": "ah_line",
+            "BbAvAHH": "odds_ah_home",
+            "BbAvAHA": "odds_ah_away",
         }
         df = df.rename(columns=rename_map)
+        for col in [
+            "odds_over25",
+            "odds_under25",
+            "ah_line",
+            "odds_ah_home",
+            "odds_ah_away",
+        ]:
+            if col not in df.columns:
+                df[col] = pd.NA
         if "season" not in df.columns:
             df["season"] = season
         if "div" not in df.columns:
