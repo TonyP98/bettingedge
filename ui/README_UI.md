@@ -16,6 +16,9 @@ The sidebar provides navigation across the pages:
 6. **Bet Sizing Simulator** – simulate stake policies.
 7. **Explain** – placeholder for explainability tools.
 
+The main page also exposes a **Results / MLflow Artifacts** tab showing outputs of
+MLflow runs for the `backtest` experiment.
+
 ## UI → Engine wiring
 
 | UI Action | Engine function | Artifacts shown |
@@ -28,3 +31,9 @@ The sidebar provides navigation across the pages:
 | **Build Ensemble** | `engine.eval.feature_assembly.assemble_ensemble_features` / `engine.models.meta_learner.MetaEnsemble` | blended probabilities, reliability plot |
 | **Run backtest** | `engine.eval.backtester.apply_conformal_guard` (+ `engine.eval.diagnostics.run_diagnostics`) | `equity.csv`, `diagnostics.html` |
 | **Compute diagnostics** | `engine.eval.diagnostics.run_diagnostics` | `diagnostics.html` |
+
+## MLflow Artifacts Viewer
+
+- The viewer reads the `MLFLOW_TRACKING_URI` from the environment or `st.secrets`.
+- If unset, it falls back to `file:/var/tmp/mlruns` (only local `file:` stores are supported).
+- Select a run to display `equity.csv`, `diagnostics.html` and `playbook.html` and download them.
