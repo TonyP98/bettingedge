@@ -9,23 +9,36 @@ from engine.data import ingest
 from engine.data.ingest import compute_market_probs, save_tables
 from engine.data.contracts import MarketProbsSchema, validate_or_raise
 from ui._io import read_duck
+from ui._state import init_defaults, DUCK_PATH
+
+init_defaults()
+ss = st.session_state
 
 st.title("📥 Data Load")
 
 uploaded = st.file_uploader("Upload CSV", type="csv")
 if uploaded is not None:
-    raw_dir = Path("data/raw")
+    raw_dir = Path(ss["DATA_ROOT"]) / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     dest = raw_dir / uploaded.name
     with open(dest, "wb") as f:
         f.write(uploaded.getbuffer())
+    ss["raw_paths"][uploaded.name] = str(dest)
     st.success(f"Saved {dest}")
 
 if st.button("Ingest data/raw"):
-    with st.spinner("Ingesting..."):
-        for path in Path("data/raw").glob("*.csv"):
-            ingest.ingest(str(path), commit=True)
-    st.success("Ingest completed")
+    paths = list(ss.get("raw_paths", {}).values())
+    if not paths:
+        st.warning("Nessun file raw caricato")
+    else:
+        with st.spinner("Ingesting..."):
+            for p in paths:
+                tables = ingest.ingest(str(p), commit=True)
+                for name in tables:
+                    ss["processed_paths"][name] = DUCK_PATH
+        # after ingestion, record processed DB path
+        ss["processed_paths"]["duckdb"] = DUCK_PATH
+        st.success("Ingest completed")
 
 st.subheader("Summary")
 try:
@@ -33,7 +46,8 @@ try:
     if not matches.empty:
         date_min = matches["event_time_local"].min()
         date_max = matches["event_time_local"].max()
-        st.write(f"Matches: {len(matches)} | Date range: {date_min} - {date_max}")
+        st.write(
+            f"Matches: {len(matches)} | Date range: {date_min} - {date_max}")
     else:
         st.info("No matches present.")
 except Exception:
@@ -74,6 +88,8 @@ if st.button("Rebuild Market Probs"):
             st.error(f"Validazione fallita: {e}")
             raise
         save_tables(probs)
+        for name in probs:
+            ss["processed_paths"][name] = DUCK_PATH
         st.success("Market probabilities ricostruite e tabelle salvate.")
         if isinstance(probs, dict) and probs:
             name, df = next(iter(probs.items()))
