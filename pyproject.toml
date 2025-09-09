@@ -27,10 +27,13 @@ dev = [
   "mypy==1.8.0",
 ]
 
+[tool.poetry]
+package-mode = false
+
 [tool.setuptools]
 package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["engine*", "ui*"]
+include = ["engine*"]
 exclude = ["tests*", "docs*", "data*", "scripts*"]
