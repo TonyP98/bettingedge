@@ -1,8 +1,8 @@
-import importlib.util
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 import pandas as pd
+import importlib.util
 
 
 def load_module(path, name):
@@ -12,13 +12,13 @@ def load_module(path, name):
     return module
 
 
-def test_backtest_page_reads_artifacts(monkeypatch, tmp_path):
+def test_backtest_page_uses_mlflow_client(monkeypatch, tmp_path):
     art_dir = tmp_path / "mlruns" / "0" / "r1" / "artifacts"
     art_dir.mkdir(parents=True, exist_ok=True)
     (art_dir / "equity.csv").write_text("equity\n1")
     (art_dir / "diagnostics.html").write_text("<html></html>")
 
-    called = {}
+    called = {"download_keys": [], "metric_cards": [], "equity": None}
 
     def fake_read_csv(path, *a, **k):
         called["equity"] = Path(path)
@@ -31,30 +31,30 @@ def test_backtest_page_reads_artifacts(monkeypatch, tmp_path):
 
     def fake_read_text(self, *a, **k):
         if self.suffix in {".html", ".csv"}:
-            called.setdefault("html", []).append(self)
             return "<html></html>"
         return orig_read_text(self, *a, **k)
 
     def fake_read_bytes(self, *a, **k):
-        if self.suffix in {".html", ".csv"}:
-            return b"x"
-        return orig_read_bytes(self, *a, **k)
+        return b"x"
 
     monkeypatch.setattr(Path, "read_text", fake_read_text)
     monkeypatch.setattr(Path, "read_bytes", fake_read_bytes)
 
     class DummyClient:
+        def get_experiment_by_name(self, name):
+            return SimpleNamespace(experiment_id="0")
+
+        def search_runs(self, experiment_ids, order_by, max_results):
+            run = SimpleNamespace(
+                info=SimpleNamespace(run_id="r1", artifact_uri=art_dir.as_uri())
+            )
+            return [run]
+
         def get_run(self, run_id):
             return SimpleNamespace(info=SimpleNamespace(experiment_id="0", artifact_uri=art_dir.as_uri()))
 
-        def get_metric_history(self, run_id, key):  # noqa: D401
-            return []
-
-        def get_experiment_by_name(self, name):
-            return None
-
-        def search_runs(self, *a, **k):
-            return []
+        def get_metric_history(self, run_id, key):
+            return [SimpleNamespace(value=0.2)] if key == "ECE" else []
 
     monkeypatch.setattr("mlflow.tracking.MlflowClient", lambda: DummyClient())
 
@@ -66,11 +66,7 @@ def test_backtest_page_reads_artifacts(monkeypatch, tmp_path):
             return False
 
     class STub:
-        session_state = {
-            "mlflow_run_id": "r1",
-            "artifacts_root": art_dir,
-            "show_artifacts": True,
-        }
+        session_state = {"show_artifacts": True}
         secrets = {}
 
         def title(self, *a, **k):
@@ -110,14 +106,13 @@ def test_backtest_page_reads_artifacts(monkeypatch, tmp_path):
             return None
 
         def download_button(self, label, *a, **k):
-            called.setdefault("download", []).append(label)
+            called["download_keys"].append(k.get("key"))
             return None
 
         class components:
             class v1:
                 @staticmethod
                 def html(*a, **k):
-                    called.setdefault("html_embed", []).append(a[0])
                     return None
 
         def info(self, *a, **k):
@@ -141,10 +136,15 @@ def test_backtest_page_reads_artifacts(monkeypatch, tmp_path):
     st = STub()
     monkeypatch.setitem(sys.modules, "streamlit", st)
 
-    load_module("ui/pages/04_📈_Backtest.py", "backtest_page")
+    def fake_metric_card(title, value, help=None):
+        called["metric_cards"].append((title, value))
+
+    monkeypatch.setattr("ui._widgets.metric_card", fake_metric_card)
+
+    load_module("ui/pages/04_📈_Backtest.py", "backtest_page_client")
 
     assert called["equity"] == art_dir / "equity.csv"
-    assert art_dir / "diagnostics.html" in called["html"]
-    assert "Scarica equity.csv" in called["download"]
-    assert "Scarica diagnostics.html" in called["download"]
-
+    assert any(k.startswith("dl_equity_r1") for k in called["download_keys"])
+    assert any(k.startswith("dl_diag_r1") for k in called["download_keys"])
+    assert len(set(called["download_keys"])) == len(called["download_keys"])
+    assert ("ECE (ensemble)", 0.2) in called["metric_cards"]
