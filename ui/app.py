@@ -12,7 +12,6 @@ if str(ROOT) not in sys.path:
 import re
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -175,8 +174,12 @@ def _generate_picks(
         trades_dfs.append(tr_df)
         metrics_by_market[mkt] = met
 
-    equity_df = pd.concat(equity_dfs, ignore_index=True) if equity_dfs else pd.DataFrame()
-    trades_df = pd.concat(trades_dfs, ignore_index=True) if trades_dfs else pd.DataFrame()
+    equity_df = (
+        pd.concat(equity_dfs, ignore_index=True) if equity_dfs else pd.DataFrame()
+    )
+    trades_df = (
+        pd.concat(trades_dfs, ignore_index=True) if trades_dfs else pd.DataFrame()
+    )
     return equity_df, trades_df, metrics_by_market
 
 
@@ -212,8 +215,12 @@ def render_backtest_panel() -> None:
         )
 
     if st.session_state.get("picks_ok"):
-        eq_pivot = st.session_state["equity_df"].pivot(
-            index="date", columns="market", values="equity"
+        eq_df = st.session_state["equity_df"].sort_values("date")
+        eq_pivot = eq_df.pivot_table(
+            index="date",
+            columns="market",
+            values="equity",
+            aggfunc="last",
         )
         st.line_chart(eq_pivot)
         st.dataframe(st.session_state["trades_df"])
