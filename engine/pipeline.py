@@ -7,8 +7,10 @@ import pandas as pd
 import numpy as np
 
 from engine.data.loader import unify
-from engine.io import persist
+from engine.io import persist, runs
 from engine.market import calibrate, odds
+from engine.signal import value, sizing
+from engine.backtest import simulate
 
 ROOT = Path(__file__).resolve().parent.parent
 PROCESSED_DIR = ROOT / "data" / "processed"
@@ -78,7 +80,61 @@ def build_market(
         print(f"Train Brier: {report['brier']:.6f}")
         print(f"Train KS p-value: {report['ks_p']:.6f}")
 
-    persist.save_df(df_probs[["date", "home", "away", "p1", "px", "p2"]], out_dir / "probs.parquet")
+    persist.save_df(
+        df_probs[["date", "home", "away", "p1", "px", "p2"]],
+        out_dir / "probs.parquet",
+    )
+
+
+def generate_picks(
+    div: str,
+    ev_min: float = 0.0,
+    stake_mode: str = "fixed",
+    stake_fraction: float = 0.01,
+    save_run: bool = False,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, float]]:
+    """Generate value signals, size bets and simulate a backtest."""
+
+    out_dir = PROCESSED_DIR / div
+    matches_path = out_dir / "matches.parquet"
+    probs_path = out_dir / "probs.parquet"
+    if not matches_path.exists() or not probs_path.exists():
+        raise FileNotFoundError("Required data files not found. Run with --build-market first.")
+
+    df_matches = persist.load_df(matches_path)
+    df_probs = persist.load_df(probs_path)
+    df = df_matches.merge(df_probs, on=["date", "home", "away"], how="inner")
+    df["date"] = pd.to_datetime(df["date"])
+
+    home = df["ft_home_goals"].to_numpy(dtype=float)
+    away = df["ft_away_goals"].to_numpy(dtype=float)
+    result = np.where(home > away, "1", np.where(home < away, "2", "x"))
+    df["result"] = result
+
+    splits_path = out_dir / "splits.json"
+    splits = persist.load_json(splits_path) if splits_path.exists() else {}
+    test_from = splits.get("test_from")
+    if test_from:
+        df = df[df["date"] >= pd.to_datetime(test_from)]
+
+    signals = value.make_signals(df, ev_min=ev_min)
+    signals = sizing.size_positions(signals, mode=stake_mode, fraction=stake_fraction)
+    equity_df, trades_df, metrics = simulate.run(signals)
+
+    if save_run:
+        config = {
+            "div": div,
+            "ev_min": ev_min,
+            "stake_mode": stake_mode,
+            "stake_fraction": stake_fraction,
+            "train_until": splits.get("train_until"),
+            "test_from": splits.get("test_from"),
+            "picks": int(len(trades_df)),
+        }
+        run_dir = runs.create_run_dir(div)
+        runs.finalize_run(run_dir, config, metrics, equity_df, trades_df)
+
+    return equity_df, trades_df, metrics
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -90,20 +146,39 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--train-ratio", type=float, default=0.8)
     parser.add_argument("--train-until")
     parser.add_argument("--calibrate", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--picks", action="store_true")
+    parser.add_argument("--ev-min", type=float, default=0.0)
+    parser.add_argument(
+        "--stake-mode", choices=["fixed", "kelly_f"], default="fixed"
+    )
+    parser.add_argument("--stake-fraction", type=float, default=0.01)
+    parser.add_argument("--save-run", action="store_true")
     args = parser.parse_args(argv)
 
     seasons = None if not args.seasons or args.seasons == ["all"] else args.seasons
 
+    action_performed = False
     if args.rebuild_canonical:
         build_canonical(args.div, seasons)
-    elif args.build_market:
+        action_performed = True
+    if args.build_market:
         build_market(
             args.div,
             train_ratio=args.train_ratio,
             train_until=args.train_until,
             calibrate_flag=args.calibrate,
         )
-    else:
+        action_performed = True
+    if args.picks:
+        generate_picks(
+            args.div,
+            ev_min=args.ev_min,
+            stake_mode=args.stake_mode,
+            stake_fraction=args.stake_fraction,
+            save_run=args.save_run,
+        )
+        action_performed = True
+    if not action_performed:
         parser.error("No action specified")
 
 
