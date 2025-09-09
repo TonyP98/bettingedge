@@ -49,6 +49,15 @@ def coerce_and_validate(df: pd.DataFrame) -> pd.DataFrame:
     df["season"] = df["season"].astype(str)
     for col in ["odds_1", "odds_x", "odds_2"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
+    for col in [
+        "odds_over25",
+        "odds_under25",
+        "ah_line",
+        "odds_ah_home",
+        "odds_ah_away",
+    ]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
     for col in ["ft_home_goals", "ft_away_goals"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
 
