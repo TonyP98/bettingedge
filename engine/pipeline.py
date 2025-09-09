@@ -11,6 +11,7 @@ from engine.io import persist, runs
 from engine.market import calibrate, odds
 from engine.signal import value, sizing
 from engine.backtest import simulate
+from engine.model import dixon_coles, skellam
 
 ROOT = Path(__file__).resolve().parent.parent
 PROCESSED_DIR = ROOT / "data" / "processed"
@@ -86,6 +87,48 @@ def build_market(
     )
 
 
+def build_scores(
+    div: str,
+    *,
+    model: str = "dc",
+    max_goals: int = 10,
+    train_ratio: float = 0.8,
+    train_until: str | None = None,
+    seasons: list[str] | None = None,
+) -> None:
+    """Fit a scoring model and persist probability grids."""
+
+    matches_path = PROCESSED_DIR / div / "matches.parquet"
+    if not matches_path.exists():
+        build_canonical(div, seasons)
+    df = persist.load_df(matches_path)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+    df["match_id"] = df.index.astype(int)
+
+    if train_until:
+        split_date = pd.to_datetime(train_until)
+        train_mask = df["date"] <= split_date
+        df_train = df[train_mask]
+    else:
+        split_idx = int(len(df) * train_ratio)
+        df_train = df.iloc[:split_idx]
+
+    if model == "dc":
+        params = dixon_coles.fit_dc(df_train)
+        grid = dixon_coles.predict_dc_grid(df, params, max_goals=max_goals)
+        out_path = PROCESSED_DIR / div / "scores_dc.parquet"
+    elif model == "skellam":
+        params = skellam.fit_skellam(df_train)
+        grid = skellam.predict_skellam_grid(df, params, max_goals=max_goals)
+        out_path = PROCESSED_DIR / div / "scores_skellam.parquet"
+    else:
+        raise ValueError(f"Unknown model {model}")
+
+    persist.save_df(grid.df, out_path)
+    print(f"Saved {len(grid.df)} rows -> {out_path}")
+
+
 def generate_picks(
     div: str,
     ev_min: float = 0.0,
@@ -141,11 +184,14 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="BettingEdge pipeline")
     parser.add_argument("--rebuild-canonical", action="store_true")
     parser.add_argument("--build-market", action="store_true")
+    parser.add_argument("--build-scores", action="store_true")
     parser.add_argument("--div", required=True)
     parser.add_argument("--seasons", nargs="*", default=[])
     parser.add_argument("--train-ratio", type=float, default=0.8)
     parser.add_argument("--train-until")
     parser.add_argument("--calibrate", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--model", choices=["dc", "skellam"], default="dc")
+    parser.add_argument("--max-goals", type=int, default=10)
     parser.add_argument("--picks", action="store_true")
     parser.add_argument("--ev-min", type=float, default=0.0)
     parser.add_argument(
@@ -167,6 +213,16 @@ def main(argv: list[str] | None = None) -> None:
             train_ratio=args.train_ratio,
             train_until=args.train_until,
             calibrate_flag=args.calibrate,
+        )
+        action_performed = True
+    if args.build_scores:
+        build_scores(
+            args.div,
+            model=args.model,
+            max_goals=args.max_goals,
+            train_ratio=args.train_ratio,
+            train_until=args.train_until,
+            seasons=seasons,
         )
         action_performed = True
     if args.picks:
