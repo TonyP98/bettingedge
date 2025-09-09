@@ -18,6 +18,9 @@ jobs:
         run: python -m engine.pipeline --rebuild-canonical --div I1 --seasons all
       - name: Smoke test market
         run: python -m engine.pipeline --build-market --div I1 --train-ratio 0.8 --calibrate
+      - name: Smoke test multi-market picks
+        run: python -m engine.pipeline --picks --div I1 --markets 1x2 ou25 --ev-min 0.02 --stake-mode fixed --stake-fraction 0.01
+        continue-on-error: true
       - name: Quick backtest (optional)
         run: python -m engine.pipeline --ev-min 0.02 --stake-mode fixed --stake-fraction 0.01 --div I1
         continue-on-error: true
