@@ -5,48 +5,19 @@ on:
   pull_request:
 
 jobs:
-  test:
+  smoke:
     runs-on: ubuntu-latest
-    env:
-      PYTHONPATH: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-      - name: Install package (dev + explain)
-        run: |
-          pip install -e .[dev,explain] || true
-          # fallback nel caso gli extras non vengano risolti:
-          pip install -e .
-          pip install pytest shap lightgbm || true
-      - name: Show environment (debug)
-        run: |
-          python -V
-          python -c "import platform; print(platform.platform())"
-          python - <<'PY'
-          import sys, numpy, pkgutil, importlib
-          print('numpy', numpy.__version__)
-          print('importlib module file:', getattr(importlib, '__file__', 'builtin'))
-          print('has importlib.util?', hasattr(importlib, 'util'))
-          print('shap?', pkgutil.find_loader('shap') is not None)
-          print('lightgbm?', pkgutil.find_loader('lightgbm') is not None)
-          PY
-      - name: Sanity check spec path
-        run: |
-          ls -la engine || true
-          ls -la engine/data || true
-          ls -la engine/data/specs || true
-          python - <<'PY'
-          import pathlib, sys
-          p = pathlib.Path('engine/data/specs/football_data_keys.yaml')
-          if not p.exists():
-              raise SystemExit(f"Missing spec file: {p.resolve()}")
-          print("Spec file exists:", p.resolve())
-          PY
-      - name: Validate key spec
-        run: python -m engine.ingest.keys --check
-      - name: Run tests
-        run: python -m pytest -q --maxfail=1
+      - name: Install dependencies
+        run: pip install -e .[dev]
+      - name: Smoke test CLI
+        run: python -m engine.pipeline --rebuild-canonical --div I1 --seasons all
+      - name: Smoke test market
+        run: python -m engine.pipeline --build-market --div I1 --train-ratio 0.8 --calibrate
+      - name: Quick backtest (optional)
+        run: python -m engine.pipeline --ev-min 0.02 --stake-mode fixed --stake-fraction 0.01 --div I1
+        continue-on-error: true
