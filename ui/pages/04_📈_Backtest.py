@@ -15,7 +15,7 @@ import streamlit as st
 # -----------------------------------------------------------------------------
 tracking_uri = (
     os.environ.get("MLFLOW_TRACKING_URI")
-    or st.secrets.get("MLFLOW_TRACKING_URI")
+    or getattr(st, "secrets", {}).get("MLFLOW_TRACKING_URI")
     or "file:/var/tmp/mlruns"
 )
 os.environ["MLFLOW_TRACKING_URI"] = tracking_uri

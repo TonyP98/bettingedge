@@ -536,7 +536,16 @@ def save_tables(tables: Dict[str, pd.DataFrame]) -> None:
 def ingest(source: str, commit: bool) -> Dict[str, pd.DataFrame]:
     ensure_dirs()
     spec = load_spec()
-    df = pd.read_csv(source)
+    try:
+        df = pd.read_csv(source)
+    except pd.errors.ParserError as e:
+        log.warning(
+            "Failed to parse %s with default settings (%s). "
+            "Retrying with python engine and skipping bad lines.",
+            source,
+            e,
+        )
+        df = pd.read_csv(source, engine="python", on_bad_lines="skip")
     df = df.dropna(axis=1, how="all").dropna(how="all").convert_dtypes()
     df = parse_event_time(df, spec)
     results = parse_results(df, spec)
