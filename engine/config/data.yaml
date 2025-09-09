@@ -1,9 +1,0 @@
-sources:
-  results: data/raw/results.csv
-  odds: data/raw/odds.csv
-
-mapping:
-  date: Date
-  time: Time
-  home_team: HomeTeam
-  away_team: AwayTeam
