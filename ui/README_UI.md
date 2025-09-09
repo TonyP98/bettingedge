@@ -19,6 +19,19 @@ The sidebar provides navigation across the pages:
 The main page also exposes a **Results / MLflow Artifacts** tab showing outputs of
 MLflow runs for the `backtest` experiment.
 
+The UI resolves a single `DATA_ROOT` at start from `DATA_ROOT` env var or
+`st.secrets`; if unset it defaults to `./data`. The value is stored in
+`st.session_state["DATA_ROOT"]` and all pages communicate paths via
+`st.session_state["raw_paths"]` and `st.session_state["processed_paths"]`.
+This avoids mismatches when moving from **Data Load** to **Rebuild Market Probs**
+to **Backtest**.
+
+Before any interaction with MLflow the `MLFLOW_TRACKING_URI` environment
+variable is set (env → `st.secrets` → `file:/var/tmp/mlruns`). The Backtest page
+reads metrics and artifacts for the current run through the MLflow API; results
+such as `equity.csv`, `diagnostics.html` and `playbook.html` are embedded
+directly from the run's artifact store.
+
 ## UI → Engine wiring
 
 | UI Action | Engine function | Artifacts shown |

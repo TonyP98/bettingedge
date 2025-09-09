@@ -2,33 +2,46 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 import traceback
 
-import pandas as pd
 import streamlit as st
+
+# -----------------------------------------------------------------------------
+# MLflow tracking configuration (before importing mlflow modules)
+# -----------------------------------------------------------------------------
+tracking_uri = (
+    os.environ.get("MLFLOW_TRACKING_URI")
+    or st.secrets.get("MLFLOW_TRACKING_URI")
+    or "file:/var/tmp/mlruns"
+)
+os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
+
+import pandas as pd
 from omegaconf import OmegaConf
-from mlflow.tracking import MlflowClient
 
 try:  # pragma: no cover - optional
     import mlflow
+    mlflow.set_tracking_uri(tracking_uri)
 except Exception:  # pragma: no cover
     mlflow = None
+from mlflow.tracking import MlflowClient
 
 from engine.eval import backtester
 from engine.eval.diagnostics import run_diagnostics
 from engine.utils import mlflow_utils as mlf
-from ui._state import set
+from ui._io import read_duck
+from ui._state import init_defaults, set
 from ui._widgets import metric_card
 
 # -----------------------------------------------------------------------------
 # Session state initialisation
 # -----------------------------------------------------------------------------
+init_defaults()
 ss = st.session_state
-ss.setdefault("mlflow_run_id", None)
-ss.setdefault("artifacts_root", None)
 ss.setdefault("show_artifacts", False)
 
 client = MlflowClient()
@@ -96,63 +109,67 @@ with backtest_tab:
         st.write("Standard Kelly strategy without conformal guard.")
 
     if st.button("Run backtest"):
-        try:
-            cfg = OmegaConf.create(
-                {
-                    "conformal": {
-                        "alpha": alpha if enable else 0.1,
-                        "mondrian_keys": mondrian if enable else [],
-                        "min_group_size": int(window) if enable else 10,
-                        "width_cap": max_width if enable else 0.35,
-                    },
-                    "policy": {
-                        "edge_thr": edge_thr if enable else 0.02,
-                        "max_width": max_width if enable else 0.35,
-                        "kelly_cap": kelly_cap if enable else 0.15,
-                        "variance_penalty": 0.0,
-                    },
-                }
-            )
-            df = pd.DataFrame(
-                {
-                    "pH": [0.4, 0.35],
-                    "pD": [0.3, 0.3],
-                    "pA": [0.3, 0.35],
-                    "oH": [2.1, 2.2],
-                    "oD": [3.1, 3.0],
-                    "oA": [3.2, 3.4],
-                    "y": [0, 1],
-                    "pnl": [0.1, -0.05],
-                }
-            )
-            mlf.start_run("backtest")
-            out = backtester.apply_conformal_guard(df, cfg)
-            eq_df = pd.DataFrame({"step": range(len(out)), "equity": out["pnl"].cumsum()})
-            eq_path = Path("data/processed/equity.csv")
-            eq_path.parent.mkdir(parents=True, exist_ok=True)
-            eq_df.to_csv(eq_path, index=False)
-            mlf.log_artifact(str(eq_path))
-            diag_path = run_diagnostics()
-            if isinstance(diag_path, str) and Path(diag_path).exists():
-                mlf.log_artifact(diag_path)
-            if mlflow and mlflow.active_run():  # active run available
-                run = mlflow.active_run()
-                ss["mlflow_run_id"] = run.info.run_id
-                set("last_run_id", run.info.run_id)
-                parsed = urlparse(run.info.artifact_uri)
-                if parsed.scheme == "file":
-                    ss["artifacts_root"] = Path(parsed.path)
-                else:
-                    st.info(
-                        "artifact store non locale: download/preview disabilitati"
-                    )
-                    ss["artifacts_root"] = None
-                st.success(f"MLflow run {run.info.run_id}")
-            mlf.end_run()
-            st.rerun()
-        except Exception as exc:  # pragma: no cover - display errors
-            st.error(f"Backtest failed: {exc}")
-            st.code(traceback.format_exc())
+        required = ["market_probs_pre", "odds_1x2_pre", "matches"]
+        missing = [r for r in required if r not in ss.get("processed_paths", {})]
+        if missing:
+            st.error("Dati mancanti: " + ", ".join(missing))
+        else:
+            try:
+                cfg = OmegaConf.create(
+                    {
+                        "conformal": {
+                            "alpha": alpha if enable else 0.1,
+                            "mondrian_keys": mondrian if enable else [],
+                            "min_group_size": int(window) if enable else 10,
+                            "width_cap": max_width if enable else 0.35,
+                        },
+                        "policy": {
+                            "edge_thr": edge_thr if enable else 0.02,
+                            "max_width": max_width if enable else 0.35,
+                            "kelly_cap": kelly_cap if enable else 0.15,
+                            "variance_penalty": 0.0,
+                        },
+                    }
+                )
+                matches = read_duck("SELECT MatchId, FTR FROM matches")
+                odds = read_duck(
+                    "SELECT MatchId, AvgH AS oH, AvgD AS oD, AvgA AS oA FROM odds_1x2_pre"
+                )
+                probs = read_duck(
+                    "SELECT MatchId, pH_mul AS pH, pD_mul AS pD, pA_mul AS pA FROM market_probs_pre"
+                )
+                df = matches.merge(odds, on="MatchId").merge(probs, on="MatchId")
+                df["y"] = df["FTR"].map({"H": 0, "D": 1, "A": 2})
+                df = df.dropna(subset=["pH", "pD", "pA", "oH", "oD", "oA", "y"])
+                mlf.start_run("backtest")
+                out = backtester.apply_conformal_guard(df, cfg)
+                ss["backtest_df"] = out
+                eq_df = pd.DataFrame({"step": range(len(out)), "equity": out["pnl"].cumsum()})
+                eq_path = Path(ss["DATA_ROOT"]) / "processed" / "equity.csv"
+                eq_path.parent.mkdir(parents=True, exist_ok=True)
+                eq_df.to_csv(eq_path, index=False)
+                mlf.log_artifact(str(eq_path))
+                diag_path = run_diagnostics(out)
+                if isinstance(diag_path, str) and Path(diag_path).exists():
+                    mlf.log_artifact(diag_path)
+                if mlflow and mlflow.active_run():
+                    run = mlflow.active_run()
+                    ss["mlflow_run_id"] = run.info.run_id
+                    set("last_run_id", run.info.run_id)
+                    parsed = urlparse(run.info.artifact_uri)
+                    if parsed.scheme == "file":
+                        ss["artifacts_root"] = Path(parsed.path)
+                    else:
+                        st.info(
+                            "artifact store non locale: download/preview disabilitati"
+                        )
+                        ss["artifacts_root"] = None
+                    st.success(f"MLflow run {run.info.run_id}")
+                mlf.end_run()
+                getattr(st, "rerun", lambda: None)()
+            except Exception as exc:  # pragma: no cover - display errors
+                st.error(f"Backtest failed: {exc}")
+                st.code(traceback.format_exc())
 
     art_root = ss.get("artifacts_root")
     if art_root:
@@ -263,10 +280,11 @@ with diag_tab:
 
     if st.button("Compute diagnostics"):
         try:
-            diag_path = run_diagnostics()
+            diag_path = run_diagnostics(ss.get("backtest_df"))
             if isinstance(diag_path, str) and Path(diag_path).exists():
-                mlf.log_artifact(diag_path)
-                st.rerun()
+                if ss.get("mlflow_run_id"):
+                    client.log_artifact(ss["mlflow_run_id"], diag_path)
+                getattr(st, "rerun", lambda: None)()
         except Exception as exc:  # pragma: no cover - display errors
             st.error(f"Diagnostics failed: {exc}")
             st.code(traceback.format_exc())
@@ -316,17 +334,33 @@ with diag_tab:
 # -----------------------------------------------------------------------------
 # Debug information
 # -----------------------------------------------------------------------------
-try:
-    current_run = client.get_run(ss["mlflow_run_id"]) if ss.get("mlflow_run_id") else None
-except Exception:
-    current_run = None
+if st.checkbox("Show debug info"):
+    try:
+        current_run = client.get_run(ss["mlflow_run_id"]) if ss.get("mlflow_run_id") else None
+    except Exception:
+        current_run = None
 
-st.subheader("Debug MLflow state")
-st.write("experiment_id:", current_run.info.experiment_id if current_run else "n/d")
-st.write("run_id:", ss.get("mlflow_run_id") or "n/d")
-st.write("artifact_uri:", current_run.info.artifact_uri if current_run else "n/d")
-if art_root:
-    files = [str(p.relative_to(art_root)) for p in Path(art_root).rglob("*") if p.is_file()]
-    st.write("artifacts:", files)
-else:
-    st.write("artifacts:", [])
+    st.subheader("Debug MLflow state")
+    st.write("experiment_id:", current_run.info.experiment_id if current_run else "n/d")
+    st.write("run_id:", ss.get("mlflow_run_id") or "n/d")
+    st.write("artifact_uri:", current_run.info.artifact_uri if current_run else "n/d")
+    if art_root:
+        files = []
+        for p in Path(art_root).rglob("*"):
+            if p.is_file():
+                info = f"{p.relative_to(art_root)} ({p.stat().st_size} B, {datetime.fromtimestamp(p.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')})"
+                files.append(info)
+        st.write("artifacts:", files)
+        eq_file = Path(art_root) / "equity.csv"
+        if eq_file.exists():
+            st.write("equity.csv size:", eq_file.stat().st_size)
+            try:
+                st.write(pd.read_csv(eq_file).head())
+            except Exception:
+                pass
+        diag_file = Path(art_root) / "diagnostics.html"
+        if diag_file.exists():
+            st.write("diagnostics.html size:", diag_file.stat().st_size)
+            st.write(diag_file.read_text()[:200])
+    else:
+        st.write("artifacts:", [])

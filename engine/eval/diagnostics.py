@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from ..utils import mlflow_utils as mlf
+
 __all__ = [
     "ece_multiclass",
     "reliability_table",
@@ -188,10 +190,38 @@ class ReliabilityBin:
     count: int
 
 
-def run_diagnostics():  # pragma: no cover - placeholder for integration
-    """Run the full diagnostics pipeline (to be extended)."""
+def run_diagnostics(df: pd.DataFrame | None = None):  # pragma: no cover - integration
+    """Run diagnostics on ``df`` and log metrics to MLflow."""
     report_dir = Path("data/processed/reports")
     report_dir.mkdir(parents=True, exist_ok=True)
     path = report_dir / "diagnostics.html"
-    path.write_text("<html><body>diagnostics</body></html>")
+    if df is None or df.empty:
+        path.write_text("<html><body>diagnostics</body></html>")
+        return str(path)
+
+    p_hat = df[["pH", "pD", "pA"]].to_numpy()
+    y = df["y"].to_numpy()
+
+    metrics: Dict[str, float] = {}
+    metrics["ECE"] = float(ece_multiclass(p_hat, y))
+    o = np.zeros_like(p_hat)
+    o[np.arange(len(y)), y.astype(int)] = 1.0
+    metrics["Brier"] = float(np.mean((p_hat - o) ** 2))
+    u = np.where(
+        y == 0,
+        p_hat[:, 0],
+        np.where(y == 1, p_hat[:, 0] + p_hat[:, 1], p_hat.sum(axis=1)),
+    )
+    metrics["KS_p"] = float(pit_diagnostics(u)["ks_p"])
+    if "RegimeId" in df.columns:
+        metrics["Regimes"] = float(df["RegimeId"].nunique())
+    else:
+        metrics["Regimes"] = 0.0
+
+    mlf.log_metrics(metrics)
+
+    html = "<html><body>" + "".join(
+        f"<p>{k}: {v:.6f}</p>" for k, v in metrics.items()
+    ) + "</body></html>"
+    path.write_text(html)
     return str(path)
