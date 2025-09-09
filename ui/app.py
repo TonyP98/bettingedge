@@ -135,31 +135,49 @@ def render_market_panel() -> None:
         st.session_state["split_ok"] = True
         st.session_state["splits"] = splits
         st.session_state["calibration_report"] = report
+        st.session_state["model_source"] = model_source
         st.write(f"ECE: {report.get('ece', float('nan')):.6f}")
         st.write(f"Brier: {report.get('brier', float('nan')):.6f}")
 
 
 def _generate_picks(
-    div: str, ev_min: float, stake_mode: str, stake_fraction: float
-) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    div: str,
+    markets: list[str],
+    ev_min: float,
+    stake_mode: str,
+    stake_fraction: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict]]:
     df_matches = load_matches(div)
     df_probs = load_probs(div)
     df = df_matches.merge(df_probs, on=["date", "home", "away"], how="inner")
     df["date"] = pd.to_datetime(df["date"])
-    home = df["ft_home_goals"].to_numpy(dtype=float)
-    away = df["ft_away_goals"].to_numpy(dtype=float)
-    result = np.where(home > away, "1", np.where(home < away, "2", "x"))
-    df["result"] = result
 
     splits = st.session_state.get("splits", {})
     test_from = splits.get("test_from")
     if test_from:
         df = df[df["date"] >= pd.to_datetime(test_from)]
 
-    signals = value.make_signals(df, ev_min=ev_min)
-    signals = sizing.size_positions(signals, mode=stake_mode, fraction=stake_fraction)
-    equity_df, trades_df, metrics = simulate.run(signals)
-    return equity_df, trades_df, metrics
+    equity_dfs: list[pd.DataFrame] = []
+    trades_dfs: list[pd.DataFrame] = []
+    metrics_by_market: dict[str, dict] = {}
+    model_source = st.session_state.get("model_source", "market")
+
+    for mkt in markets:
+        sigs = value.make_signals(
+            df,
+            ev_min=ev_min,
+            market=mkt,
+            use_model_probs=model_source,
+        )
+        sigs = sizing.size_positions(sigs, mode=stake_mode, fraction=stake_fraction)
+        eq_df, tr_df, met = simulate.run(sigs, market=mkt)
+        equity_dfs.append(eq_df)
+        trades_dfs.append(tr_df)
+        metrics_by_market[mkt] = met
+
+    equity_df = pd.concat(equity_dfs, ignore_index=True) if equity_dfs else pd.DataFrame()
+    trades_df = pd.concat(trades_dfs, ignore_index=True) if trades_dfs else pd.DataFrame()
+    return equity_df, trades_df, metrics_by_market
 
 
 def render_backtest_panel() -> None:
@@ -171,11 +189,14 @@ def render_backtest_panel() -> None:
     ev_min = st.number_input("EV_min", value=0.0, step=0.01)
     stake_mode = st.selectbox("Stake mode", ["fixed", "kelly_f"], index=0)
     stake_fraction = st.number_input("Stake fraction", value=0.01, step=0.01)
+    markets = st.multiselect(
+        "Mercati", ["1x2", "ou25", "dnb", "dc", "ah"], default=["1x2"]
+    )
 
     if st.button("Genera picks & Backtest"):
         with st.spinner("Simulazione..."):
             equity_df, trades_df, metrics = _generate_picks(
-                div, ev_min, stake_mode, stake_fraction
+                div, markets, ev_min, stake_mode, stake_fraction
             )
         st.session_state.update(
             {
@@ -186,14 +207,17 @@ def render_backtest_panel() -> None:
                 "ev_min": ev_min,
                 "stake_mode": stake_mode,
                 "stake_fraction": stake_fraction,
+                "markets": markets,
             }
         )
 
     if st.session_state.get("picks_ok"):
-        eq = st.session_state["equity_df"].set_index("date")
-        st.line_chart(eq)
+        eq_pivot = st.session_state["equity_df"].pivot(
+            index="date", columns="market", values="equity"
+        )
+        st.line_chart(eq_pivot)
         st.dataframe(st.session_state["trades_df"])
-        st.write(st.session_state["metrics"])
+        st.write(pd.DataFrame(st.session_state["metrics"]).T)
         csv_data = st.session_state["trades_df"].to_csv(index=False).encode("utf-8")
         json_data = st.session_state["trades_df"].to_json(orient="records")
         st.download_button("Export CSV", data=csv_data, file_name="trades.csv")
@@ -201,6 +225,7 @@ def render_backtest_panel() -> None:
 
         if st.button("Salva run"):
             splits = st.session_state.get("splits", {})
+            run_dir = runs.create_run_dir(div)
             config = {
                 "div": div,
                 "ev_min": st.session_state["ev_min"],
@@ -208,16 +233,22 @@ def render_backtest_panel() -> None:
                 "stake_fraction": st.session_state["stake_fraction"],
                 "train_until": splits.get("train_until"),
                 "test_from": splits.get("test_from"),
-                "picks": int(len(st.session_state["trades_df"])),
             }
-            run_dir = runs.create_run_dir(div)
-            runs.finalize_run(
-                run_dir,
-                config,
-                st.session_state["metrics"],
-                st.session_state["equity_df"],
-                st.session_state["trades_df"],
-            )
+            persist.save_json(config, run_dir / "config.json")
+            metrics_df = pd.DataFrame(st.session_state["metrics"]).T
+            persist.save_df(metrics_df, run_dir / "metrics_by_market.csv")
+            for mkt in st.session_state["markets"]:
+                eq_m = st.session_state["equity_df"][
+                    st.session_state["equity_df"]["market"] == mkt
+                ]
+                tr_m = st.session_state["trades_df"][
+                    st.session_state["trades_df"]["market"] == mkt
+                ]
+                persist.save_df(eq_m, run_dir / f"equity_{mkt}.csv")
+                persist.save_df(tr_m, run_dir / f"trades_{mkt}.csv")
+                persist.save_json(
+                    st.session_state["metrics"][mkt], run_dir / f"metrics_{mkt}.json"
+                )
             st.success(f"Run salvato in {run_dir}")
 
 

@@ -116,6 +116,14 @@ def predict_match_probs(df_matches: pd.DataFrame, rates: dict) -> pd.DataFrame:
         p1 = np.triu(mat, 1).sum() / total
         px = np.trace(mat) / total
         p2 = np.tril(mat, -1).sum() / total
-        rows.append({"p1": p1, "px": px, "p2": p2})
+        rows.append(
+            {
+                "p1": p1,
+                "px": px,
+                "p2": p2,
+                "lambda_home": lambda_home,
+                "lambda_away": lambda_away,
+            }
+        )
 
     return pd.DataFrame(rows, index=df_matches.index)

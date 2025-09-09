@@ -1,32 +1,65 @@
-"""Computation of value-based betting signals.
-
-This module provides utilities to compare model probabilities against the
-market and extract positive expected value opportunities.
-"""
+"""Computation of value-based betting signals for multiple markets."""
 
 from __future__ import annotations
 
+from typing import Mapping
+
+import numpy as np
 import pandas as pd
 
-_SEL_MAP = {
-    "1": ("p1", "odds_1"),
-    "x": ("px", "odds_x"),
-    "2": ("p2", "odds_2"),
-}
+from engine.market import markets
 
 
-def compute_value(probs: pd.Series, odds: pd.Series) -> pd.Series:
-    """Return the expected value for each outcome.
+def compute_value(prob: float, odds: float) -> float:
+    """Expected value for binary outcome markets."""
 
-    Parameters
-    ----------
-    probs:
-        Model probabilities for the selection.
-    odds:
-        Corresponding decimal odds from the market.
-    """
+    return prob * odds - 1.0
 
-    return probs * odds - 1
+
+def _compute_ah_ev(prob_map: Mapping[str, float], odds: float) -> float:
+    """Expected value for Asian handicap selections."""
+
+    return (
+        prob_map.get("win", 0.0) * (odds - 1)
+        + prob_map.get("half_win", 0.0) * (odds - 1) * 0.5
+        + prob_map.get("half_loss", 0.0) * (-0.5)
+        + prob_map.get("loss", 0.0) * (-1.0)
+    )
+
+
+def _synthetic_dnb_odds(row: pd.Series) -> Mapping[str, float] | None:
+    p1 = 1 / row["odds_1"]
+    px = 1 / row["odds_x"]
+    p2 = 1 / row["odds_2"]
+    total = p1 + px + p2
+    if total == 0:
+        return None
+    p1 /= total
+    p2 /= total
+    denom = p1 + p2
+    if denom == 0:
+        return None
+    return {
+        "home": 1 / (p1 / denom),
+        "away": 1 / (p2 / denom),
+    }
+
+
+def _synthetic_dc_odds(row: pd.Series) -> Mapping[str, float] | None:
+    p1 = 1 / row["odds_1"]
+    px = 1 / row["odds_x"]
+    p2 = 1 / row["odds_2"]
+    total = p1 + px + p2
+    if total == 0:
+        return None
+    p1 /= total
+    px /= total
+    p2 /= total
+    return {
+        "1x": 1 / (p1 + px),
+        "12": 1 / (p1 + p2),
+        "x2": 1 / (px + p2),
+    }
 
 
 def make_signals(
@@ -35,47 +68,90 @@ def make_signals(
     odds_min: float | None = None,
     odds_max: float | None = None,
     max_per_day: int | None = None,
+    market: str = "1x2",
+    use_model_probs: str = "market",
 ) -> pd.DataFrame:
-    """Create a long-form DataFrame of value signals.
+    """Create a long-form DataFrame of value signals for *market*."""
 
-    Parameters
-    ----------
-    df_probs:
-        DataFrame with columns ``date``, ``home``, ``away``, ``result`` and
-        probability/odds columns for each selection.
-    ev_min:
-        Minimum expected value threshold. Only selections with ``edge`` greater
-        than or equal to ``ev_min`` are retained.
-    odds_min / odds_max:
-        Optional bounds on allowed odds.
-    max_per_day:
-        If given, limit the number of picks per date to the selections with the
-        highest edges.
-    """
-
+    spec = markets.MARKETS[market]
     df = df_probs.copy()
     df["date"] = pd.to_datetime(df["date"])
 
-    records: list[pd.DataFrame] = []
-    for sel, (p_col, o_col) in _SEL_MAP.items():
-        p_model = df[p_col]
-        odds = df[o_col]
-        p_market = 1 / odds
-        edge = compute_value(p_model, odds)
+    records: list[dict] = []
 
-        mask = edge >= ev_min
-        if odds_min is not None:
-            mask &= odds >= odds_min
-        if odds_max is not None:
-            mask &= odds <= odds_max
+    for _, row in df.iterrows():
+        model_probs = {"p1": row.get("p1"), "px": row.get("px"), "p2": row.get("p2")}
+        extra = {
+            "lambda_home": row.get("lambda_home"),
+            "lambda_away": row.get("lambda_away"),
+            "ah_line": row.get("ah_line"),
+        }
+        prob_map = spec.prob_fn(row, model_probs, extra)
 
-        subset = df.loc[mask, ["date", "home", "away", "result"]].copy()
-        subset["selection"] = sel
-        subset["odds"] = odds[mask]
-        subset["p_model"] = p_model[mask]
-        subset["p_market"] = p_market[mask]
-        subset["edge"] = edge[mask]
-        records.append(subset)
+        odds_map: Mapping[str, float]
+        missing = [c not in row or pd.isna(row[c]) for c in spec.odds_cols.values()]
+        if any(missing):
+            if market == "dnb":
+                odds_map = _synthetic_dnb_odds(row) or {}
+            elif market == "dc":
+                odds_map = _synthetic_dc_odds(row) or {}
+            else:
+                odds_map = {}
+        else:
+            odds_map = {sel: row[col] for sel, col in spec.odds_cols.items()}
+
+        if len(odds_map) != len(spec.targets):
+            continue
+
+        p_market = {sel: 1 / odds_map[sel] for sel in spec.targets}
+        total_market = sum(p_market.values())
+        if total_market == 0:
+            continue
+        p_market = {sel: p_market[sel] / total_market for sel in spec.targets}
+
+        for sel in spec.targets:
+            odds = odds_map[sel]
+            if odds_min is not None and odds < odds_min:
+                continue
+            if odds_max is not None and odds > odds_max:
+                continue
+
+            if market == "ah":
+                sel_probs = prob_map.get(sel, {})
+                if not sel_probs:
+                    continue
+                p_model = sel_probs.get("win", 0.0) + 0.5 * sel_probs.get("half_win", 0.0)
+                edge = _compute_ah_ev(sel_probs, odds)
+            else:
+                p_model = prob_map.get(sel)
+                if p_model is None:
+                    continue
+                edge = compute_value(p_model, odds)
+
+            if edge < ev_min:
+                continue
+
+            result_aux = {
+                "ft_home_goals": row.get("ft_home_goals"),
+                "ft_away_goals": row.get("ft_away_goals"),
+            }
+            if market == "ah":
+                result_aux["ah_line"] = row.get("ah_line")
+
+            records.append(
+                {
+                    "date": row["date"],
+                    "home": row["home"],
+                    "away": row["away"],
+                    "market": market,
+                    "selection": sel,
+                    "odds": odds,
+                    "p_model": p_model,
+                    "p_market": p_market[sel],
+                    "edge": edge,
+                    "result_aux": result_aux,
+                }
+            )
 
     if not records:
         return pd.DataFrame(
@@ -84,19 +160,18 @@ def make_signals(
                 "match_id",
                 "home",
                 "away",
+                "market",
                 "selection",
                 "odds",
                 "p_model",
                 "p_market",
                 "edge",
-                "result",
+                "result_aux",
             ]
         )
 
-    signals = pd.concat(records, ignore_index=True)
+    signals = pd.DataFrame(records)
     signals.sort_values("date", inplace=True)
-
-    # Generate a simple match identifier based on ordering of matches
     signals.insert(1, "match_id", signals.groupby(["date", "home", "away"]).ngroup())
 
     if max_per_day is not None:
@@ -112,12 +187,16 @@ def make_signals(
             "match_id",
             "home",
             "away",
+            "market",
             "selection",
             "odds",
             "p_model",
             "p_market",
             "edge",
-            "result",
+            "result_aux",
         ]
     ]
+
+
+__all__ = ["make_signals"]
 
