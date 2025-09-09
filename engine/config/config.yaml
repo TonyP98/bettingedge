@@ -1,6 +1,0 @@
-paths:
-  raw: data/raw
-  processed: data/processed
-
-seed: 42
-timezone: Europe/Rome

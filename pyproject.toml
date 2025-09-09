@@ -4,62 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bettingedge"
-version = "0.0.1"
+version = "0.1.0"
 description = "Betting research engine"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "hydra-core",
-    "polars",
-    "duckdb",
-    "mlflow>=2.14",
-    "pandera",
-    "xgboost",
-    "lightgbm",
-    "numpy",
-    "scipy",
-    "scikit-learn",
-    "numba",
-    "plotly",
-    "streamlit",
-    "kaleido>=0.2.1",
-]
-
-[tool.poetry]
-package-mode = true
-packages = [
-  { include = "engine" },
-  { include = "ui" }   # rimuovi se non vuoi includere la UI nel wheel
+    "pandas>=2.0",
+    "pyarrow>=15.0",
+    "numpy>=1.26",
+    "python-dateutil>=2.8",
+    "typing-extensions>=4.9",
+    "scikit-learn>=1.4",
+    "streamlit>=1.30",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=7",
-  "pytest-cov>=4",
-  "pre-commit>=3",
   "black>=24.3",
   "isort>=5.13",
   "ruff>=0.5",
   "mypy>=1.8",
 ]
-torch = ["torch"]
-explain = [
-  "shap>=0.45.0",        # wheel manylinux, compat con numpy recente
-  "lightgbm>=4.3.0",     # wheel manylinux
-  "imodels>=1.4.7; python_version >= '3.9'",  # opzionale; se manca, test devono skippare
-]
-
-[project.scripts]
-bettingedge-keys = "engine.ingest.keys:main"
 
 [tool.setuptools]
 package-dir = {"" = "."}
-include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["engine*"]
-exclude = ["tests*", "docs*", "ui*", "data*"]
-
-[tool.setuptools.package-data]
-engine = ["data/specs/*.yaml", "eval/templates/*.html", "eval/templates/*.htm"]
+include = ["engine*", "ui*"]
+exclude = ["tests*", "docs*", "data*", "scripts*"]
