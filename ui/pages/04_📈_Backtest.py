@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlparse
+import os
+import traceback
 
 import pandas as pd
 import streamlit as st
@@ -17,7 +20,27 @@ from engine.eval import backtester
 from engine.eval.diagnostics import run_diagnostics
 from engine.utils import mlflow_utils as mlf
 from ui._state import get, set
-from ui._widgets import equity_plot, metric_card
+from ui._widgets import metric_card
+
+# ensure session state keys exist
+if "mlflow_run_id" not in st.session_state:
+    st.session_state["mlflow_run_id"] = None
+if "artifacts_root" not in st.session_state:
+    st.session_state["artifacts_root"] = None
+if "show_artifacts" not in st.session_state:
+    st.session_state["show_artifacts"] = False
+
+# MLflow tracking resolution
+tracking_uri = (
+    os.environ.get("MLFLOW_TRACKING_URI")
+    or st.secrets.get("MLFLOW_TRACKING_URI")
+    or "file:/var/tmp/mlruns"
+)
+parsed_tracking = urlparse(tracking_uri)
+if parsed_tracking.scheme == "file":
+    Path(parsed_tracking.path).mkdir(parents=True, exist_ok=True)
+if mlflow:
+    mlflow.set_tracking_uri(tracking_uri)
 
 st.title("📈 Backtest")
 
@@ -83,22 +106,63 @@ with backtest_tab:
             eq_path.parent.mkdir(parents=True, exist_ok=True)
             eq_df.to_csv(eq_path, index=False)
             mlf.log_artifact(str(eq_path))
-            equity_plot(eq_df)
             diag_path = run_diagnostics()
             if isinstance(diag_path, str) and Path(diag_path).exists():
                 mlf.log_artifact(diag_path)
-                st.components.v1.html(
-                    Path(diag_path).read_text(), height=300, scrolling=True
-                )
             if mlflow and mlflow.active_run():
-                run_id = mlflow.active_run().info.run_id
-                set("last_run_id", run_id)
-                st.success(f"MLflow run {run_id}")
-                if st.button("Apri cartella artifact"):
-                    st.write(mlflow.get_artifact_uri())
+                run = mlflow.active_run()
+                st.session_state["mlflow_run_id"] = run.info.run_id
+                set("last_run_id", run.info.run_id)
+                parsed = urlparse(run.info.artifact_uri)
+                if parsed.scheme == "file":
+                    st.session_state["artifacts_root"] = Path(parsed.path)
+                else:
+                    st.info("artifact store non locale: download/preview disabilitati")
+                    st.session_state["artifacts_root"] = None
+                st.success(f"MLflow run {run.info.run_id}")
             mlf.end_run()
+            st.rerun()
         except Exception as exc:
             st.error(f"Backtest failed: {exc}")
+            st.code(traceback.format_exc())
+
+    art_root = st.session_state.get("artifacts_root")
+    if art_root:
+        eq_file = Path(art_root) / "equity.csv"
+        if eq_file.exists():
+            try:
+                df = pd.read_csv(eq_file)
+                col = (
+                    "equity"
+                    if "equity" in df.columns
+                    else df.select_dtypes("number").columns.to_list()[0]
+                    if not df.select_dtypes("number").empty
+                    else None
+                )
+                if col:
+                    st.line_chart(df[col])
+                else:
+                    st.write(df)
+                st.download_button(
+                    "Scarica equity.csv",
+                    data=eq_file.read_bytes(),
+                    file_name="equity.csv",
+                    mime="text/csv",
+                )
+            except Exception as e:
+                st.error(f"Errore nel leggere equity.csv: {e}")
+                st.code(traceback.format_exc())
+        else:
+            st.warning("equity.csv non trovato per questo run")
+        if st.button("Apri cartella artifact"):
+            st.session_state["show_artifacts"] = True
+        if st.session_state.get("show_artifacts"):
+            for p in sorted(Path(art_root).glob("*")):
+                if p.is_file():
+                    mime = "text/html" if p.suffix == ".html" else "text/csv" if p.suffix == ".csv" else None
+                    st.download_button(
+                        f"Scarica {p.name}", data=p.read_bytes(), file_name=p.name, mime=mime
+                    )
 
     st.header("Bandit (online)")
     algo = st.selectbox("Algoritmo", ["linucb", "thompson"], index=0)
@@ -118,22 +182,61 @@ with backtest_tab:
 
 with diag_tab:
     st.header("Diagnostics")
+    art_root = st.session_state.get("artifacts_root")
+    diag_file = Path(art_root) / "diagnostics.html" if art_root else None
+    if diag_file and diag_file.exists():
+        try:
+            st.components.v1.html(
+                diag_file.read_text(), height=700, scrolling=True
+            )
+            st.download_button(
+                "Scarica diagnostics.html",
+                data=diag_file.read_bytes(),
+                file_name="diagnostics.html",
+                mime="text/html",
+            )
+        except Exception as e:
+            st.error(f"Errore nel leggere diagnostics.html: {e}")
+            st.code(traceback.format_exc())
+    else:
+        st.info("Esegui Run backtest e riprova")
+
     if st.button("Compute diagnostics"):
         try:
             diag_path = run_diagnostics()
             if isinstance(diag_path, str) and Path(diag_path).exists():
-                st.components.v1.html(
-                    Path(diag_path).read_text(), height=300, scrolling=True
-                )
+                mlf.log_artifact(diag_path)
+                st.rerun()
         except Exception as exc:
             st.error(f"Diagnostics failed: {exc}")
+            st.code(traceback.format_exc())
+
     if st.button("Open last report"):
-        path = Path("data/processed/reports/diagnostics.html")
-        if path.exists():
-            st.components.v1.html(path.read_text(), height=300, scrolling=True)
-        else:
-            st.info("No diagnostics report found.")
-    metric_card("ECE (ensemble)", "-")
-    metric_card("Brier", "-")
-    metric_card("KS-p (PIT)", "-")
-    metric_card("# Regimes", "-")
+        st.session_state["show_artifacts"] = True
+    if st.session_state.get("show_artifacts") and art_root:
+        for p in sorted(Path(art_root).glob("*")):
+            if p.is_file():
+                mime = "text/html" if p.suffix == ".html" else "text/csv" if p.suffix == ".csv" else None
+                st.download_button(
+                    f"Scarica {p.name}", data=p.read_bytes(), file_name=p.name, mime=mime
+                )
+
+    metrics = {"ECE": "n/d", "Brier": "n/d", "KS-p": "n/d", "Regimes": "n/d"}
+    metrics_path = Path(art_root) / "diagnostics_summary.csv" if art_root else None
+    if metrics_path and metrics_path.exists():
+        try:
+            mdf = pd.read_csv(metrics_path)
+            if {"metric", "value"}.issubset(mdf.columns):
+                mdict = {m: v for m, v in zip(mdf["metric"], mdf["value"])}
+                metrics["ECE"] = mdict.get("ECE", metrics["ECE"])
+                metrics["Brier"] = mdict.get("Brier", mdict.get("brier", metrics["Brier"]))
+                metrics["KS-p"] = mdict.get("KS_p", mdict.get("ks_p", metrics["KS-p"]))
+                metrics["Regimes"] = mdict.get("Regimes", mdict.get("regimes", metrics["Regimes"]))
+        except Exception as e:
+            st.error(f"Errore nel leggere diagnostics_summary: {e}")
+            st.code(traceback.format_exc())
+
+    metric_card("ECE (ensemble)", metrics["ECE"], help=None if metrics["ECE"] != "n/d" else "metrica non esportata dal motore")
+    metric_card("Brier", metrics["Brier"], help=None if metrics["Brier"] != "n/d" else "metrica non esportata dal motore")
+    metric_card("KS-p (PIT)", metrics["KS-p"], help=None if metrics["KS-p"] != "n/d" else "metrica non esportata dal motore")
+    metric_card("# Regimes", metrics["Regimes"], help=None if metrics["Regimes"] != "n/d" else "metrica non esportata dal motore")
