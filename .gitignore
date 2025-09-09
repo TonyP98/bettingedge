@@ -4,9 +4,9 @@ __pycache__/
 .env.*
 !.env.example
 .venv/
-mlruns/
 .hydra/
 data/processed/*.parquet
 data/processed/*.duckdb
 ui/.streamlit/
 data/processed/reports/
+runs/
