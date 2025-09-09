@@ -1,39 +1,24 @@
-"""Simple backtest simulator."""
+"""Simple backtest simulator supporting multiple markets."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
+from engine.market import markets
+
 
 def run(
     signals: pd.DataFrame,
     bankroll: float = 1.0,
+    market: str = "1x2",
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, float]]:
-    """Run a sequential betting simulation.
-
-    Parameters
-    ----------
-    signals:
-        DataFrame with at least the columns ``date``, ``home``, ``away``,
-        ``selection``, ``odds``, ``stake`` and ``result``.
-    bankroll:
-        Starting bankroll. Defaults to 1 unit.
-    """
+    """Run a sequential betting simulation for *market*."""
 
     if signals.empty:
-        equity_df = pd.DataFrame(columns=["date", "equity"])
+        equity_df = pd.DataFrame(columns=["date", "market", "equity"])
         trades_df = pd.DataFrame(
-            columns=[
-                "date",
-                "match",
-                "selection",
-                "odds",
-                "stake",
-                "result",
-                "pnl",
-                "equity",
-            ]
+            columns=["date", "match_id", "market", "selection", "odds", "stake", "pnl"]
         )
         metrics = {
             "cagr": 0.0,
@@ -44,6 +29,7 @@ def run(
         }
         return equity_df, trades_df, metrics
 
+    spec = markets.MARKETS[market]
     df = signals.sort_values("date").reset_index(drop=True)
 
     equity = bankroll
@@ -51,21 +37,24 @@ def run(
     trade_rows = []
 
     for _, row in df.iterrows():
-        hit = row["result"] == row["selection"]
-        pnl = row["stake"] * (row["odds"] - 1) if hit else -row["stake"]
+        aux = row.get("result_aux", {})
+        ft_home = aux.get("ft_home_goals")
+        ft_away = aux.get("ft_away_goals")
+        ah_line = aux.get("ah_line")
+        payoff = spec.settle_fn(ft_home, ft_away, row["selection"], row["odds"], ah_line)
+        pnl = row["stake"] * payoff
         equity += pnl
 
-        equity_rows.append({"date": row["date"], "equity": equity})
+        equity_rows.append({"date": row["date"], "market": market, "equity": equity})
         trade_rows.append(
             {
                 "date": row["date"],
-                "match": f"{row['home']} vs {row['away']}",
+                "match_id": row.get("match_id"),
+                "market": market,
                 "selection": row["selection"],
                 "odds": row["odds"],
                 "stake": row["stake"],
-                "result": int(hit),
                 "pnl": pnl,
-                "equity": equity,
             }
         )
 
@@ -82,7 +71,7 @@ def run(
     if returns.count() > 1 and returns.std(ddof=1) > 0:
         sharpe = float(returns.mean() / returns.std(ddof=1) * np.sqrt(len(returns)))
 
-    hit_rate = float(trades_df["result"].mean()) if not trades_df.empty else 0.0
+    hit_rate = float((returns > 0).mean()) if not trades_df.empty else 0.0
     turnover = float(trades_df["stake"].sum())
 
     metrics = {

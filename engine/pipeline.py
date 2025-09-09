@@ -62,18 +62,16 @@ def build_market(
         train_idx = np.zeros(len(df_probs), dtype=bool)
         train_idx[:split_idx] = True
 
-    if model_source in {"poisson", "blend"}:
-        rates = poisson.fit_team_rates(
-            df_probs.loc[train_idx, ["home", "away", "ft_home_goals", "ft_away_goals"]]
-        )
-        df_poi = poisson.predict_match_probs(df_probs[["home", "away"]], rates)
-        if model_source == "poisson":
-            df_probs[["p1", "px", "p2"]] = df_poi[["p1", "px", "p2"]]
-        else:
-            blended = (
-                0.5 * df_probs[["p1", "px", "p2"]] + 0.5 * df_poi[["p1", "px", "p2"]]
-            )
-            df_probs[["p1", "px", "p2"]] = blended.div(blended.sum(axis=1), axis=0)
+    rates = poisson.fit_team_rates(
+        df_probs.loc[train_idx, ["home", "away", "ft_home_goals", "ft_away_goals"]]
+    )
+    df_poi = poisson.predict_match_probs(df_probs[["home", "away"]], rates)
+    if model_source == "poisson":
+        df_probs[["p1", "px", "p2"]] = df_poi[["p1", "px", "p2"]]
+    elif model_source == "blend":
+        blended = 0.5 * df_probs[["p1", "px", "p2"]] + 0.5 * df_poi[["p1", "px", "p2"]]
+        df_probs[["p1", "px", "p2"]] = blended.div(blended.sum(axis=1), axis=0)
+    df_probs[["lambda_home", "lambda_away"]] = df_poi[["lambda_home", "lambda_away"]]
 
     df_train = df_probs.loc[train_idx]
     df_test = df_probs.loc[~train_idx]
@@ -105,7 +103,7 @@ def build_market(
         persist.save_json(report, out_dir / "calibration_report.json")
 
     persist.save_df(
-        df_probs[["date", "home", "away", "p1", "px", "p2"]],
+        df_probs[["date", "home", "away", "p1", "px", "p2", "lambda_home", "lambda_away"]],
         out_dir / "probs.parquet",
     )
 
@@ -118,8 +116,10 @@ def generate_picks(
     stake_mode: str = "fixed",
     stake_fraction: float = 0.01,
     save_run: bool = False,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, float]]:
-    """Generate value signals, size bets and simulate a backtest."""
+    markets: list[str] | None = None,
+    model_source: str = "market",
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[str, float]]]:
+    """Generate value signals, size bets and simulate a backtest for one or more markets."""
 
     out_dir = PROCESSED_DIR / div
     matches_path = out_dir / "matches.parquet"
@@ -145,11 +145,36 @@ def generate_picks(
     if test_from:
         df = df[df["date"] >= pd.to_datetime(test_from)]
 
-    signals = value.make_signals(df, ev_min=ev_min)
-    signals = sizing.size_positions(signals, mode=stake_mode, fraction=stake_fraction)
-    equity_df, trades_df, metrics = simulate.run(signals)
+    markets = markets or ["1x2"]
+    equity_dfs: list[pd.DataFrame] = []
+    trades_dfs: list[pd.DataFrame] = []
+    metrics_by_market: dict[str, dict[str, float]] = {}
 
-    if save_run:
+    for mkt in markets:
+        sigs = value.make_signals(
+            df,
+            ev_min=ev_min,
+            market=mkt,
+            use_model_probs=model_source,
+        )
+        sigs = sizing.size_positions(sigs, mode=stake_mode, fraction=stake_fraction)
+        eq_df, tr_df, met = simulate.run(sigs, market=mkt)
+        equity_dfs.append(eq_df)
+        trades_dfs.append(tr_df)
+        metrics_by_market[mkt] = met
+
+        if save_run:
+            run_dir = run_dir if "run_dir" in locals() else runs.create_run_dir(div)
+            persist.save_df(eq_df, run_dir / f"equity_{mkt}.csv")
+            persist.save_df(tr_df, run_dir / f"trades_{mkt}.csv")
+            persist.save_json(met, run_dir / f"metrics_{mkt}.json")
+
+    equity_df = pd.concat(equity_dfs, ignore_index=True) if equity_dfs else pd.DataFrame()
+    trades_df = pd.concat(trades_dfs, ignore_index=True) if trades_dfs else pd.DataFrame()
+
+    if save_run and equity_dfs:
+        metrics_df = pd.DataFrame(metrics_by_market).T
+        persist.save_df(metrics_df, run_dir / "metrics_by_market.csv")
         config = {
             "div": div,
             "ev_min": ev_min,
@@ -157,12 +182,10 @@ def generate_picks(
             "stake_fraction": stake_fraction,
             "train_until": splits.get("train_until"),
             "test_from": splits.get("test_from"),
-            "picks": int(len(trades_df)),
         }
-        run_dir = runs.create_run_dir(div)
-        runs.finalize_run(run_dir, config, metrics, equity_df, trades_df)
+        persist.save_json(config, run_dir / "config.json")
 
-    return equity_df, trades_df, metrics
+    return equity_df, trades_df, metrics_by_market
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -180,6 +203,7 @@ def main(argv: list[str] | None = None) -> None:
         "--model-source", choices=["market", "poisson", "blend"], default="market"
     )
     parser.add_argument("--picks", action="store_true")
+    parser.add_argument("--markets", nargs="*", default=["1x2"])
     parser.add_argument("--ev-min", type=float, default=0.0)
     parser.add_argument("--stake-mode", choices=["fixed", "kelly_f"], default="fixed")
     parser.add_argument("--stake-fraction", type=float, default=0.01)
@@ -208,6 +232,8 @@ def main(argv: list[str] | None = None) -> None:
             stake_mode=args.stake_mode,
             stake_fraction=args.stake_fraction,
             save_run=args.save_run,
+            markets=args.markets,
+            model_source=args.model_source,
         )
         action_performed = True
     if not action_performed:
