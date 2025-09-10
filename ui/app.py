@@ -329,6 +329,7 @@ def render_backtest_panel() -> None:
                         "signals": signals,
                     }
                 )
+                st.rerun
         else:
             eq_df = st.session_state["equity_df"].sort_values("date")
             eq_pivot = eq_df.pivot_table(
