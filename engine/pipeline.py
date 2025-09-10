@@ -34,7 +34,7 @@ def build_market(
     train_until: str | None = None,
     calibrate_flag: bool = True,
     model_source: str = "market",
-) -> tuple[dict, dict]:
+) -> tuple[dict, dict, dict, calibrate.Calibrator | None]:
     matches_path = PROCESSED_DIR / div / "matches.parquet"
     if not matches_path.exists():
         build_canonical(div)
@@ -90,6 +90,7 @@ def build_market(
     persist.save_json(splits, out_dir / "splits.json")
 
     report: dict[str, float] = {}
+    cal: calibrate.Calibrator | None = None
     if calibrate_flag and not df_train.empty:
         cal = calibrate.fit_calibrator(df_train)
         df_probs = calibrate.apply_calibrator(df_probs, cal)
@@ -107,7 +108,7 @@ def build_market(
         out_dir / "probs.parquet",
     )
 
-    return splits, report
+    return splits, report, rates, cal
 
 
 def generate_picks(
