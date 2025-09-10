@@ -21,7 +21,7 @@ def run(
             columns=["date", "match_id", "market", "selection", "odds", "stake", "pnl"]
         )
         metrics = {
-            "cagr": 0.0,
+            "roi": 0.0,
             "maxdd": 0.0,
             "sharpe": 0.0,
             "hit_rate": 0.0,
@@ -61,8 +61,6 @@ def run(
     equity_df = pd.DataFrame(equity_rows).sort_values("date").reset_index(drop=True)
     trades_df = pd.DataFrame(trade_rows).reset_index(drop=True)
 
-    days = (equity_df["date"].iloc[-1] - equity_df["date"].iloc[0]).days or 1
-    cagr = (equity_df["equity"].iloc[-1] / bankroll) ** (365 / days) - 1
     cummax = equity_df["equity"].cummax()
     maxdd = float((equity_df["equity"] / cummax - 1).min())
 
@@ -73,9 +71,11 @@ def run(
 
     hit_rate = float((returns > 0).mean()) if not trades_df.empty else 0.0
     turnover = float(trades_df["stake"].sum())
+    profit = float(equity_df["equity"].iloc[-1] - bankroll)
+    roi = profit / turnover if turnover else 0.0
 
     metrics = {
-        "cagr": float(cagr),
+        "roi": roi,
         "maxdd": maxdd,
         "sharpe": sharpe,
         "hit_rate": hit_rate,

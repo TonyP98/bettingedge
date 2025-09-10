@@ -55,7 +55,7 @@ python -m engine.ingest.keys --check
 - **ECE** – expected calibration error
 - **Brier** – mean squared error between probabilities and outcomes
 - **KS-p** – Kolmogorov–Smirnov test p-value
-- **CAGR** – compound annual growth rate of equity
+- **ROI** – return on investment (profit divided by turnover)
 - **MaxDD** – maximum drawdown
 - **Sharpe** – mean return divided by its standard deviation
 

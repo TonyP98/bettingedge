@@ -41,7 +41,7 @@ def finalize_run(
     summary = (
         "# Run Summary\n"
         f"Picks: {len(trades_df)}\n"
-        f"CAGR: {metrics.get('cagr', 0.0):.4f}\n"
+        f"ROI: {metrics.get('roi', 0.0):.4f}\n"
         f"MaxDD: {metrics.get('maxdd', 0.0):.4f}\n"
         f"Sharpe: {metrics.get('sharpe', 0.0):.4f}\n"
     )
@@ -59,7 +59,7 @@ def finalize_run(
                 "train_until",
                 "test_from",
                 "picks",
-                "cagr",
+                "roi",
                 "maxdd",
                 "sharpe",
             ]
@@ -71,7 +71,7 @@ def finalize_run(
         "train_until": config.get("train_until"),
         "test_from": config.get("test_from"),
         "picks": len(trades_df),
-        "cagr": metrics.get("cagr"),
+        "roi": metrics.get("roi"),
         "maxdd": metrics.get("maxdd"),
         "sharpe": metrics.get("sharpe"),
     }
